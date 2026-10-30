@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Path, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
@@ -30,6 +30,7 @@ from codebuddy.api.security import (
     parse_keys,
 )
 from codebuddy.config import Settings, get_settings
+from codebuddy.memory.store import LearnerMemory
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
 from codebuddy.schemas import ApproveRequest, Mode, ShowAnswerRequest, TurnRequest
 from codebuddy.stt.transcribe import TranscriptionError
@@ -114,6 +115,7 @@ def create_app(
             "stt_configured": getattr(app.state, "speech", None) is not None,
             "tools": {"MCPToolRunner": "mcp", "LocalToolRunner": "local"}.get(tools or "", "off"),
             "sandbox_network_isolated": network_isolated(),
+            "memory_enabled": bool(d and d.memory),
             "auth_required": bool(parse_keys(s.api_keys)),
         }
 
@@ -192,20 +194,26 @@ def create_app(
             emit(events, session_id, code), media_type="text/event-stream", headers=headers
         )
 
-    def turn_events(session_id: str, message: str, code: str | None, language: str):
+    def turn_events(
+        session_id: str, message: str, code: str | None, language: str, learner_id: str | None
+    ):
         inputs = {"session_id": session_id, "message": message, "code": code, "language": language}
+        if learner_id and current().memory:
+            inputs["learner_id"] = learner_id
         return run_turn(app.state.graph, inputs, new_turn_id())
 
     @app.post("/v1/turn", dependencies=[Depends(guard)])
     async def turn(req: TurnRequest):
         if not req.message.strip():
             raise HTTPException(422, "message must not be empty")
-        events = turn_events(req.session_id, req.message, req.code, req.language)
+        events = turn_events(req.session_id, req.message, req.code, req.language, req.learner_id)
         return stream_response(events, req.session_id, req.code)
 
     @app.post("/v1/show-answer", dependencies=[Depends(guard)])
     async def show_answer(req: ShowAnswerRequest):
-        events = turn_events(req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language)
+        events = turn_events(
+            req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language, req.learner_id
+        )
         return stream_response(events, req.session_id, req.code)
 
     @app.post("/v1/approve", dependencies=[Depends(guard)])
@@ -254,6 +262,28 @@ def create_app(
             "can_show_answer": progress.hints_given >= 1,
             "run_permission": progress.run_permission,
         }
+
+    # -- learner memory (privacy) ----------------------------------------------------
+
+    LearnerId = Path(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+
+    def memory_store() -> LearnerMemory:
+        if (memory := current().memory) is None:
+            raise HTTPException(503, "Long-term memory is not enabled")
+        return memory
+
+    @app.get("/v1/memory/{learner_id}", dependencies=[Depends(guard)])
+    async def memory_list(learner_id: str = LearnerId):
+        items = await memory_store().all(learner_id)
+        return {
+            "items": [
+                {"kind": i.kind.value, "text": i.text, "created_at": i.created_at} for i in items
+            ]
+        }
+
+    @app.delete("/v1/memory/{learner_id}", dependencies=[Depends(guard)])
+    async def memory_forget(learner_id: str = LearnerId):
+        return {"deleted": await memory_store().forget(learner_id)}
 
     return app
 

@@ -37,8 +37,16 @@ class Harness:
             "events": events,
         }
 
-    async def turn(self, message: str, code: str | None = None, session: str = "s1") -> dict:
+    async def turn(
+        self,
+        message: str,
+        code: str | None = None,
+        session: str = "s1",
+        learner_id: str | None = None,
+    ) -> dict:
         inputs = {"session_id": session, "message": message, "code": code}
+        if learner_id:
+            inputs["learner_id"] = learner_id
         return self._collect([e async for e in run_turn(self.graph, inputs)])
 
     async def resume(self, thread_id: str, approve: bool, remember: bool = True) -> dict:
@@ -48,7 +56,7 @@ class Harness:
 
 @pytest.fixture
 def make_harness(settings, embeddings, sparse, qdrant, tmp_path):
-    def build(fast=None, standard=None, heavy=None, tools=None) -> Harness:
+    def build(fast=None, standard=None, heavy=None, tools=None, memory=None) -> Harness:
         stores = {
             c: get_store(c, qdrant, embeddings, sparse, settings)
             for c in ("fundamentals", "pedagogy")
@@ -77,6 +85,7 @@ def make_harness(settings, embeddings, sparse, qdrant, tmp_path):
             answers=AnswerCache(cache, ttl=600),
             clock=lambda: harness.clock_now,
             tools=tools,
+            memory=memory,
         )
         Harness.__init__(harness, deps, tiers)
         return harness

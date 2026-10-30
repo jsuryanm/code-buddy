@@ -5,6 +5,7 @@ from typing import TypedDict
 from pydantic import BaseModel, Field
 
 from codebuddy.agent.code_analysis import CodeFeatures
+from codebuddy.memory.types import MemoryItem
 from codebuddy.rag.retrieve import RetrievalResult
 from codebuddy.schemas import Citation, Decision, Intent, PcditStage, SessionProgress
 
@@ -24,6 +25,7 @@ class TutorState(TypedDict, total=False):
     message: str
     code: str | None
     language: str
+    learner_id: str | None
     # working state
     progress: SessionProgress
     features: CodeFeatures
@@ -37,6 +39,7 @@ class TutorState(TypedDict, total=False):
     approved: bool
     runtime: dict | None
     cases: list[dict]
+    memories: list[MemoryItem]
     # output
     reply: str
     citations: list[Citation]

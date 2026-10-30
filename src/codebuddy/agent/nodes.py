@@ -19,6 +19,7 @@ from codebuddy.agent.deps import Deps
 from codebuddy.agent.state import TutorState
 from codebuddy.cache import keys
 from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
+from codebuddy.memory.types import Episode
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.pedagogy.policy import decide_mode
@@ -107,6 +108,8 @@ class TutorNodes:
         """L1 (exact) then optional L2 (semantic). Only concept answers without code are stored."""
         if state.get("code"):
             return {"cache_key": None}
+        if self.d.memory and state.get("learner_id"):
+            return {"cache_key": None}  # personalized answers must not be shared or stored
         s = self.d.settings
         key = keys.answer_key(
             state["message"],
@@ -137,7 +140,11 @@ class TutorNodes:
         return {"cache_key": key, "cache_locked": locked}
 
     def route_after_cache(self, state: TutorState):
-        return "emit_cached" if state.get("cached_reply") else ["classify", "retrieve"]
+        return (
+            "emit_cached"
+            if state.get("cached_reply")
+            else ["classify", "retrieve", "recall_memory"]
+        )
 
     async def emit_cached(self, state: TutorState) -> dict:
         writer = get_stream_writer()
@@ -174,6 +181,23 @@ class TutorNodes:
             log.warning("retrieval failed", exc_info=True)
             result = RetrievalResult([], grounded=False)
         return {"retrieval": result}
+
+    async def recall_memory(self, state: TutorState) -> dict:
+        learner_id = state.get("learner_id")
+        if not (self.d.memory and learner_id):
+            return {"memories": []}
+        s = self.d.settings
+        try:
+            items = await asyncio.wait_for(
+                self.d.memory.recall(learner_id, state["message"], s.memory_recall_limit),
+                timeout=s.memory_recall_timeout_s,
+            )
+        except Exception:
+            log.warning("memory recall failed", exc_info=True)
+            await self.d.metrics.incr("memory_failures")
+            return {"memories": []}
+        await self.d.metrics.incr("memory_recalls")
+        return {"memories": items}
 
     async def refine_retrieval(self, state: TutorState) -> dict:
         """Short follow-ups ("and what about that?") retrieve badly. Re-run retrieval with the
@@ -317,7 +341,13 @@ class TutorNodes:
             (
                 "human",
                 user_prompt(
-                    state["message"], state.get("code"), context, findings, progress.history
+                    state["message"],
+                    state.get("code"),
+                    context,
+                    findings,
+                    progress.history,
+                    state.get("memories"),
+                    self.d.settings.memory_recall_limit,
                 ),
             ),
         ]
@@ -366,6 +396,31 @@ class TutorNodes:
 
     # -- output ----------------------------------------------------------------------
 
+    def _remember(self, state: TutorState, decision: Decision, progress, hints_before: int) -> None:
+        learner_id = state.get("learner_id")
+        if not (self.d.memory and learner_id):
+            return
+        every = self.d.settings.memory_write_every
+        revealed = decision.mode is Mode.REVEAL
+        if not (revealed or (decision.mode is Mode.HINT and progress.hints_given % every == 0)):
+            return
+        episode = Episode(
+            state["session_id"],
+            progress.stage.value,
+            hints_before,
+            "revealed" if revealed else "in_progress",
+        )
+        self.d.spawn(self._write_memory(learner_id, progress.history, episode))
+
+    async def _write_memory(self, learner_id: str, history: list[dict], episode: Episode) -> None:
+        try:
+            await self.d.memory.remember(learner_id, history, episode)
+        except Exception:
+            log.warning("memory write failed", exc_info=True)
+            await self.d.metrics.incr("memory_failures")
+        else:
+            await self.d.metrics.incr("memory_writes")
+
     async def update_state(self, state: TutorState) -> dict:
         progress = state["progress"]
         decision: Decision = state["decision"]
@@ -373,6 +428,8 @@ class TutorNodes:
         if cls := state.get("classification"):
             progress.stage = cls.stage
 
+        had_history = bool(progress.history)  # the prompt depended on earlier turns
+        hints_before = progress.hints_given
         if decision.mode is Mode.HINT:
             progress.hints_given += 1
             progress.started_at = progress.started_at or self.d.clock()
@@ -389,6 +446,7 @@ class TutorNodes:
         ][-HISTORY_TURNS:]
         await self.d.sessions.save(progress)
         await self.d.metrics.incr("turns")
+        self._remember(state, decision, progress, hints_before)
 
         key = state.get("cache_key")
         retrieval = state.get("retrieval")
@@ -397,6 +455,7 @@ class TutorNodes:
             and not state.get("cache_hit")
             and not state.get("degraded")
             and not state.get("guarded")
+            and not had_history  # the key ignores history, so only first-turn replies are shared
             and retrieval is not None
             and retrieval.grounded
             and is_answer_cacheable(decision, bool(state.get("code")))

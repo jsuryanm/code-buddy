@@ -1,9 +1,10 @@
 """The tutor graph (spec 12.1, 14.3).
 
 Flow: load_state, analyze_code, check_cache. A cache hit goes to emit_cached. A miss runs
-classify and retrieve in parallel, then refine_retrieval and policy. After policy, route_tools
-chooses generate directly, run_tools, or approve_run (a human-in-the-loop pause that asks the
-learner before their code is run). generate and emit_cached both end in update_state.
+classify, retrieve and recall_memory (opt-in, timed out) in parallel, then refine_retrieval and
+policy. After policy, route_tools chooses generate directly, run_tools, or approve_run (a
+human-in-the-loop pause that asks the learner before their code is run). generate and
+emit_cached both end in update_state.
 
 Each turn runs on its own checkpoint thread, so a turn paused for approval can be resumed
 later and no state leaks between turns. Learner progress lives in the session cache.
@@ -35,6 +36,8 @@ CHECKPOINT_TYPES = [
     ("codebuddy.agent.code_analysis", "CodeFeatures"),
     ("codebuddy.rag.rerank", "RetrievedChunk"),
     ("codebuddy.rag.retrieve", "RetrievalResult"),
+    ("codebuddy.memory.types", "MemoryItem"),
+    ("codebuddy.memory.types", "MemoryKind"),
 ]  # fmt: skip
 
 
@@ -52,6 +55,7 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver | None = None):
         "emit_cached": n.emit_cached,
         "classify": n.classify,
         "retrieve": n.retrieve,
+        "recall_memory": n.recall_memory,
         "refine_retrieval": n.refine_retrieval,
         "policy": n.policy,
         "approve_run": n.approve_run,
@@ -65,9 +69,9 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver | None = None):
     g.add_edge("load_state", "analyze_code")
     g.add_edge("analyze_code", "check_cache")
     g.add_conditional_edges(
-        "check_cache", n.route_after_cache, ["emit_cached", "classify", "retrieve"]
+        "check_cache", n.route_after_cache, ["emit_cached", "classify", "retrieve", "recall_memory"]
     )
-    g.add_edge(["classify", "retrieve"], "refine_retrieval")  # join: wait for both
+    g.add_edge(["classify", "retrieve", "recall_memory"], "refine_retrieval")  # join: wait for all
     g.add_edge("refine_retrieval", "policy")
     g.add_conditional_edges("policy", n.route_tools, ["generate", "run_tools", "approve_run"])
     g.add_conditional_edges("approve_run", n.route_after_approval, ["run_tools", "generate"])

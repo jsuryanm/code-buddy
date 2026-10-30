@@ -78,12 +78,14 @@ class TurnRequest(BaseModel):
     message: str
     code: str | None = None
     language: str = "python"
+    learner_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")
 
 
 class ShowAnswerRequest(BaseModel):
     session_id: str
     code: str | None = None
     language: str = "python"
+    learner_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")
 
 
 class ApproveRequest(BaseModel):

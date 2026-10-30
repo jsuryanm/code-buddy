@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from codebuddy.agent.state import Classification
 from codebuddy.cache.base import Cache
@@ -15,6 +16,7 @@ from codebuddy.cache.memory import InMemoryCache
 from codebuddy.cache.semantic import SemanticIndex
 from codebuddy.config import Settings
 from codebuddy.llm import Tiers
+from codebuddy.memory.store import LearnerMemory
 from codebuddy.metrics import Metrics
 from codebuddy.pedagogy.frustration import asks_for_answer
 from codebuddy.rag.retrieve import Retriever
@@ -101,3 +103,10 @@ class Deps:
     embeddings: CachedEmbeddings | None = None  # for the optional semantic cache
     semantic: SemanticIndex | None = None
     cache: Cache = field(default_factory=InMemoryCache)  # rate limits and pending approvals
+    memory: LearnerMemory | None = None  # None disables long-term learner memory
+    background: set = field(default_factory=set)  # keeps references to fire-and-forget tasks
+
+    def spawn(self, coro: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(coro)
+        self.background.add(task)
+        task.add_done_callback(self.background.discard)
