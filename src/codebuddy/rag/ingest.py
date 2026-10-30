@@ -152,6 +152,8 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
     ap.add_argument("--pcdit-stage")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args(argv)
+    if not args.path.exists():
+        ap.error(f"no such file or folder: {args.path}")
 
     settings = get_settings()
     client = make_client(settings)
