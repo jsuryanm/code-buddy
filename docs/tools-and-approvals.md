@@ -75,6 +75,26 @@ the MCP server) in a container or microVM with no secrets and no network. See
 Tests (`tests/unit/test_sandbox.py`) cover: normal runs and traces, runtime errors with line
 numbers, infinite loops, runaway recursion, output caps, and thirteen refused patterns.
 
+## Stronger isolation
+
+`trace_python` runs code through a `SandboxBackend` (`sandbox/backend.py`) chosen by
+`CODEBUDDY_SANDBOX_BACKEND`. The only backend included is `local`, the subprocess sandbox above,
+and it is the default. The allowlist check runs before any backend is called, so a backend only
+receives code that already passed it.
+
+The deepagents docs describe sandboxes as backends that give an agent an `execute` tool. Their
+providers are Daytona (`langchain-daytona`), Modal (`langchain-modal`), and Runloop
+(`langchain-runloop`), plus a community OpenSandbox package. Each needs an account or runtime.
+
+To use one, write an adapter: implement `SandboxBackend.run` by sending `sandbox/harness.py` and
+the JSON payload (`code`, `memory_mb`, `cpu_s`) to the provider's `backend.execute(...)`, then
+parse its JSON output into the result contract in the `sandbox/backend.py` docstring. Register it
+in `BACKENDS` and set `CODEBUDDY_SANDBOX_BACKEND` to its name. Unknown names raise `ValueError`.
+
+No adapter is included and none is tested. A remote sandbox adds a network round trip to every
+trace and usually costs money per run or per sandbox-minute; the local backend has neither. See
+[ADR 0007](adr/0007-sandbox-backends-not-deepagents-harness.md).
+
 ## MCP
 
 `mcp_server/server.py` is a FastMCP server over stdio exposing the three tools.

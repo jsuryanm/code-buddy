@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     mcp_enabled: bool = True  # run tools through an MCP stdio server; False calls them in-process
     sandbox_timeout_s: float = 3.0
     sandbox_memory_mb: int = 256
+    sandbox_backend: str = "local"  # see docs/tools-and-approvals.md (Stronger isolation)
     checkpoint_path: str = "data/checkpoints.sqlite"
 
     # API hardening

@@ -6,7 +6,8 @@ import ast
 
 from codebuddy.agent.code_analysis import PATTERNS, analyze
 from codebuddy.config import get_settings
-from codebuddy.sandbox.runner import run_python
+from codebuddy.sandbox.backend import get_backend
+from codebuddy.sandbox.check import check_code
 
 _LIST_NAMES = {"nums", "numbers", "items", "lst", "xs", "values", "data", "arr", "array", "lines"}
 _INT_NAMES = {"n", "k", "x", "y", "num", "count", "limit", "size", "start", "stop"}
@@ -55,8 +56,13 @@ async def suggest_cases(code: str) -> dict:
 async def trace_python(code: str) -> dict:
     """Run learner code in the sandbox. Returns output, any error with its line, and a trace
     of variable values for the first and last steps."""
+    violations = check_code(code)
+    if violations:
+        return {"ran": False, "violations": violations}
     s = get_settings()
-    return await run_python(code, timeout_s=s.sandbox_timeout_s, memory_mb=s.sandbox_memory_mb)
+    return await get_backend(s.sandbox_backend).run(
+        code, timeout_s=s.sandbox_timeout_s, memory_mb=s.sandbox_memory_mb
+    )
 
 
 TOOLS = {

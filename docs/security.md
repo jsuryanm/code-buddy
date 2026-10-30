@@ -43,6 +43,8 @@ learner agrees, restricted by an allowlist and resource limits, offline where th
    so learner code is never run and no permission prompt appears. (`CODEBUDDY_MCP_ENABLED=false`
    only changes how tools are called, in-process instead of over MCP, and does not disable them.)
 3. Keep the approval prompt. It is the human check for the one risky action.
+4. For stronger isolation, plug a remote sandbox in behind `SandboxBackend`; none is included.
+   See [tools-and-approvals.md](tools-and-approvals.md#stronger-isolation).
 
 ## Secrets
 
