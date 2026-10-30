@@ -1,0 +1,4 @@
+{"query": "what is an off-by-one error", "expect": "off-by-one"}
+{"query": "how do I debug a loop by tracing it by hand", "expect": "Trace the loop"}
+{"query": "why does an accumulator need a starting value", "expect": "starting value"}
+{"query": "what is a base case in recursion", "expect": "base case"}

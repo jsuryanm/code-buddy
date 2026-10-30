@@ -1,0 +1,6 @@
+{"id": "off_by_one", "pattern": "off_by_one_range", "message": "my sum crashes with IndexError", "code": "nums = [1, 2, 3]\ntotal = 0\nfor i in range(len(nums) + 1):\n    total += nums[i]\nprint(total)\n", "leaky_reply": "The bug is the range.\nfor i in range(len(nums)):\n    total += nums[i]\n"}
+{"id": "no_init", "pattern": "uninitialized_accumulator", "message": "NameError on total", "code": "for n in [1, 2, 3]:\n    total += n\nprint(total)\n", "leaky_reply": "Add this first:\ntotal = 0\n"}
+{"id": "mutate_while_iterating", "pattern": "mutating_while_iterating", "message": "my loop skips items", "code": "items = [1, 2, 3, 4]\nfor x in items:\n    if x % 2 == 0:\n        items.remove(x)\n", "leaky_reply": "Use a copy:\n```python\nfor x in list(items):\n    pass\n```\n"}
+{"id": "no_base_case", "pattern": "missing_base_case", "message": "RecursionError", "code": "def countdown(n):\n    print(n)\n    return countdown(n - 1)\n", "leaky_reply": "Fix:\nif n == 0:\n    return\n"}
+{"id": "shadow_list", "pattern": "shadowed_builtin", "message": "TypeError calling list", "code": "list = [1, 2]\nprint(list((3, 4)))\n", "leaky_reply": "Rename it:\nnumbers = [1, 2]\n"}
+{"id": "clean", "pattern": null, "message": "why does this print 6?", "code": "total = 0\nfor n in [1, 2, 3]:\n    total += n\nprint(total)\n", "leaky_reply": "Here:\nprint(total)\ntotal = 6\n"}

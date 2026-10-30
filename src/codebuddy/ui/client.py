@@ -1,0 +1,100 @@
+"""HTTP/SSE client for the CodeBuddy API. No Streamlit imports, so it is easy to unit test."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Iterable, Iterator
+
+import httpx
+
+
+def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
+    """Parse Server-Sent Events into (event, data) pairs."""
+    event = "message"
+    data: list[str] = []
+    for raw in lines:
+        line = raw.rstrip("\r\n")
+        if line == "":
+            if data:
+                yield event, json.loads("\n".join(data))
+            event, data = "message", []
+        elif line.startswith("event:"):
+            event = line[6:].strip()
+        elif line.startswith("data:"):
+            data.append(line[5:].lstrip())
+    if data:
+        yield event, json.loads("\n".join(data))
+
+
+class ApiError(Exception):
+    pass
+
+
+class TutorClient:
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 90.0,
+        transport: httpx.BaseTransport | None = None,
+        api_key: str | None = None,
+    ):
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self._http = httpx.Client(
+            base_url=base_url, timeout=timeout, transport=transport, headers=headers
+        )
+
+    def _stream(self, path: str, payload: dict) -> Iterator[tuple[str, dict]]:
+        try:
+            with self._http.stream("POST", path, json=payload) as resp:
+                if resp.status_code != 200:
+                    resp.read()
+                    raise ApiError(f"API returned {resp.status_code}: {resp.text[:200]}")
+                yield from parse_sse(resp.iter_lines())
+        except httpx.HTTPError as exc:
+            raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
+
+    def stream_turn(
+        self, session_id: str, message: str, code: str | None, language: str = "python"
+    ) -> Iterator[tuple[str, dict]]:
+        payload = {"session_id": session_id, "message": message, "code": code, "language": language}
+        return self._stream("/v1/turn", payload)
+
+    def stream_show_answer(
+        self, session_id: str, code: str | None, language: str = "python"
+    ) -> Iterator[tuple[str, dict]]:
+        payload = {"session_id": session_id, "code": code, "language": language}
+        return self._stream("/v1/show-answer", payload)
+
+    def stream_approve(
+        self, session_id: str, turn_id: str, approve: bool, remember: bool = True
+    ) -> Iterator[tuple[str, dict]]:
+        payload = {
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "approve": approve,
+            "remember": remember,
+        }
+        return self._stream("/v1/approve", payload)
+
+    def transcribe(
+        self, audio: bytes, filename: str = "speech.wav", content_type: str = "audio/wav"
+    ) -> str:
+        """Send recorded audio to the API and return the transcript text."""
+        try:
+            resp = self._http.post("/v1/stt", files={"audio": (filename, audio, content_type)})
+        except httpx.HTTPError as exc:
+            raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
+        if resp.status_code != 200:
+            detail = (
+                resp.json().get("detail")
+                if resp.headers.get("content-type", "").startswith("application/json")
+                else resp.text[:200]
+            )
+            raise ApiError(f"Voice input failed ({resp.status_code}): {detail}")
+        return resp.json()["text"]
+
+    def health(self) -> dict | None:
+        try:
+            return self._http.get("/healthz", timeout=3).json()
+        except (httpx.HTTPError, ValueError):
+            return None

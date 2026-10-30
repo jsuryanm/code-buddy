@@ -1,0 +1,39 @@
+# Untested sketch of a three-service deployment: Qdrant server, API, Streamlit UI.
+# Put secrets in .env (OPENAI_API_KEY, GROQ_API_KEY, UPSTASH_*, CODEBUDDY_*), never in this file.
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.15.0   # pin to the server version you test against
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      CODEBUDDY_QDRANT_URL: http://qdrant:6333
+      CODEBUDDY_CHECKPOINT_PATH: /app/data/checkpoints.sqlite
+    volumes:
+      - app-data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  ui:
+    build: .
+    command: ["streamlit", "run", "src/codebuddy/ui/app.py", "--server.port", "8501",
+              "--server.address", "0.0.0.0", "--server.headless", "true"]
+    environment:
+      CODEBUDDY_API_URL: http://api:8000
+      CODEBUDDY_API_KEY: ${CODEBUDDY_API_KEY:-}
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  qdrant-data:
+  app-data:

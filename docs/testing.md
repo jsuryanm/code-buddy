@@ -1,0 +1,107 @@
+# Testing and evaluation
+
+Everything below runs offline: no API keys, no network, no Docker.
+
+## Commands
+
+```bash
+uv run pytest -q                                   # all tests
+uv run pytest tests/unit -q                        # fast, pure-logic tests
+uv run pytest tests/unit/test_policy.py::test_name -q       # one test
+uv run pytest tests/integration/test_graph.py -q   # agent graph with scripted models
+uv run ruff check .                                # lint
+uv run ruff format --check .                       # formatting (drop --check to apply)
+uv run python -m codebuddy.eval.run                # offline eval; exit code 1 on failure
+uv run python -m codebuddy.eval.run --json
+```
+
+`pyproject.toml` sets `asyncio_mode = "auto"`, so `async def test_...` just works.
+
+## Layout
+
+| Path | Covers |
+|---|---|
+| `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals |
+| `tests/unit/test_guard.py` | Leak guard: prose passes, code and fences blocked, streaming behavior |
+| `tests/unit/test_code_analysis.py` | The five bug patterns and false positives |
+| `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, cacheability rule |
+| `tests/unit/test_rag.py` | Chunking, ingestion idempotence, hybrid retrieval, corpus access, filters |
+| `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request |
+| `tests/unit/test_sandbox.py` | Real subprocess runs: traces, errors with line numbers, infinite loops, recursion, output cap, thirteen refused code patterns |
+| `tests/unit/test_tools.py` | Tool functions, permission rules, and a **real MCP stdio server** called through the adapters |
+| `tests/unit/test_judge.py` | Sampled leak judge: counting, rate, never judging reveals, failures ignored |
+| `tests/integration/test_graph.py` | Full graph: ladder, guard, reveal, outage, caching, history, citations |
+| `tests/integration/test_api.py` | HTTP endpoints and SSE framing |
+| `tests/integration/test_api_hardening.py` | API keys, rate limits, the approval flow over HTTP (including another session being refused), speech upload limits and fallback, metrics, background judge |
+| `tests/integration/test_tools_hitl.py` | Pause and resume around running code: approve, decline, remember, syntax errors, reveals, refused code |
+| `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; query rewriting for short follow-ups only |
+| `tests/integration/test_ui_smoke.py` | Streamlit page with a stub client |
+| `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
+| `tests/integration/test_eval.py` | The offline eval meets its thresholds |
+
+## Fakes (no real models)
+
+| Fake | Where | Replaces |
+|---|---|---|
+| `ScriptedChat(replies, fail=False)` | `rag/fakes.py`, re-exported by `tests/helpers.py` | Chat models. Replays scripted replies token by token and records every prompt in `.calls` |
+| `DeterministicFakeEmbedding` | `langchain_core` | Dense embeddings |
+| `HashSparse` | `rag/fakes.py` | BM25 sparse embeddings (no model download) |
+| `QdrantClient(":memory:")` | `qdrant-client` | Qdrant |
+| `InMemoryCache` | `cache/memory.py` | Upstash Redis (accepts an injected clock for TTL tests) |
+| `HeuristicClassifier` | `agent/deps.py` | The LLM classifier |
+| `LocalToolRunner` | `tools/runner.py` | The MCP session (the sandbox itself is real) |
+| Fake transcribers | `tests/integration/test_api_hardening.py` | Groq and OpenAI speech |
+| `Stub` client | `tests/integration/test_ui_voice_approval.py` | The HTTP API, for UI tests |
+
+Fake embeddings carry no meaning, so retrieval tests rely on the BM25 half of the hybrid search.
+
+## Writing a graph test
+
+Use the `make_harness` fixture (`tests/integration/conftest.py`). It builds the graph over the
+sample corpus with scripted tiers:
+
+```python
+async def test_example(make_harness):
+    model = ScriptedChat(["What is i on the last pass?"])
+    h = make_harness(standard=model)  # also: fast=, heavy=
+    out = await h.turn("my sum crashes", code=BUGGY)
+    assert out["meta"]["level"] == 0  # meta event
+    assert out["text"].startswith("What is i")  # tokens the learner saw
+    assert out["state"]["progress"].hints_given == 1
+    assert "off_by_one_range" in model.calls[0][1][1]  # the user prompt the model got
+```
+
+`out["state"]` is the final graph state. Pass `session="other"` to `turn()` for a separate learner.
+Use different `code` per turn when you want to avoid the repeated-submission frustration signal.
+
+For tools, pass `tools=LocalToolRunner()` to `make_harness`. A turn that needs permission returns
+`out["interrupt"]` (the approval payload) and `out["thread_id"]`; continue it with
+`await h.resume(out["thread_id"], approve=True)`.
+
+## Offline eval (`eval/run.py`)
+
+Data: `src/codebuddy/eval/golden/cases.jsonl` (buggy programs, each with a scripted "leaky" reply)
+and `retrieval.jsonl` (queries with expected text).
+
+| Metric | Meaning | Threshold |
+|---|---|---|
+| `leak_rate` | Hint replies still containing code after the guard | at most 0.02 |
+| `guard_trigger_rate` | Scripted leaky replies the guard stopped | 1.0 |
+| `pattern_recall` | Labeled bugs found by static analysis | 1.0 |
+| `escalation_ok` | Offer after three hints, never a reveal unasked | 1.0 |
+| `retrieval_recall` | Queries whose expected text is in the top results (sample corpus) | at least 0.75 |
+
+These measure the machinery with fake models. They do not rate the quality of a real model's
+questions. For that, run real conversations and have an instructor score them (spec Section 16.3).
+
+## Not tested
+
+- Live OpenAI, Groq, Upstash, and Qdrant-server behavior (needs your credentials)
+- The Docker files and CI workflow
+- The sandbox against a determined attacker (see [security.md](security.md))
+- PDF ingestion with Docling and the cross-encoder reranker (optional extras)
+- The Streamlit page in a real browser, and recording audio from a real microphone
+- Load and latency under concurrency
+
+A good first live check: set `.env`, ingest one document, ask a question through the UI, and read
+`ttft_ms` in the API log. Ask the same concept question twice and confirm `cache_hit` is true.

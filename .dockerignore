@@ -1,0 +1,13 @@
+.venv/
+.git/
+.env
+.claude/
+graphify-out/
+data/raw/
+data/index/
+data/checkpoints.sqlite*
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+docs/
+tests/

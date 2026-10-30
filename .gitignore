@@ -1,0 +1,15 @@
+.claude/settings.local.json
+CLAUDE.local.md
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+data/raw/
+data/index/
+data/checkpoints.sqlite*
+graphify-out/cache/
+
+.superpowers/
+data/memory/
+graphify-out/

@@ -1,0 +1,53 @@
+[project]
+name = "codebuddy"
+version = "0.1.0"
+description = "RAG-based Socratic programming tutor guided by PCDIT"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "httpx",
+  "pydantic-settings",
+  "langchain",
+  "langgraph",
+  "langchain-openai",
+  "langchain-qdrant",
+  "qdrant-client",
+  "fastembed",
+  "upstash-redis",
+  "groq>=1.7.0",
+  "python-multipart>=0.0.32",
+  "mcp>=1.30.0",
+  "langchain-mcp-adapters>=0.3.2",
+  "langgraph-checkpoint-sqlite>=3.1.2",
+  "aiosqlite>=0.22.1",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit"]
+pdf = ["docling"]
+rerank = ["sentence-transformers"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codebuddy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
