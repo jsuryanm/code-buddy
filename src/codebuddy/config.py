@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     sandbox_backend: str = "local"  # see docs/tools-and-approvals.md (Stronger isolation)
     checkpoint_path: str = "data/checkpoints.sqlite"
 
+    # Long-term learner memory (mem0); off by default
+    memory_enabled: bool = False
+    memory_path: str = "data/memory"
+    memory_embedding_dims: int = 1536
+    memory_recall_limit: int = 5
+    memory_recall_timeout_s: float = 0.6
+    memory_write_every: int = 4
+
     # API hardening
     api_keys: str = ""  # comma-separated; empty disables authentication
     rate_limit_per_minute: int = 30  # per client; 0 disables
