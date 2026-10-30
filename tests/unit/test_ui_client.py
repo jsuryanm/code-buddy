@@ -103,3 +103,49 @@ def test_stream_approve_posts_the_decision():
     client = TutorClient("http://api", transport=httpx.MockTransport(handler))
     assert list(client.stream_approve("s", "t", False, remember=False)) == [("done", {"ok": True})]
     assert '"approve":false' in seen["body"].replace(" ", "") and '"turn_id":"t"' in seen["body"]
+
+
+def _capture(seen):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.read().decode().replace(" ", "")
+        return httpx.Response(200, text='event: done\ndata: {"ok": true}\n\n')
+
+    return TutorClient("http://api", transport=httpx.MockTransport(handler))
+
+
+def test_learner_id_is_sent_only_when_set():
+    seen = {}
+    client = _capture(seen)
+    list(client.stream_turn("s", "hi", None))
+    list(client.stream_show_answer("s", None))
+    assert "learner_id" not in seen["body"]
+    list(client.stream_turn("s", "hi", None, learner_id="a" * 16))
+    assert f'"learner_id":"{"a" * 16}"' in seen["body"]
+    list(client.stream_show_answer("s", None, learner_id="b" * 16))
+    assert f'"learner_id":"{"b" * 16}"' in seen["body"]
+
+
+def test_memories_and_forget_call_the_memory_routes():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.method == "GET":
+            return httpx.Response(200, json={"items": [{"kind": "semantic", "text": "x"}]})
+        return httpx.Response(200, json={"deleted": 3})
+
+    client = TutorClient("http://api", transport=httpx.MockTransport(handler))
+    assert client.memories("a" * 16) == [{"kind": "semantic", "text": "x"}]
+    assert client.forget("a" * 16) == 3
+    assert seen == [("GET", f"/v1/memory/{'a' * 16}"), ("DELETE", f"/v1/memory/{'a' * 16}")]
+
+
+def test_memory_failures_have_readable_messages():
+    client = TutorClient(
+        "http://api",
+        transport=httpx.MockTransport(lambda r: httpx.Response(503, json={"detail": "disabled"})),
+    )
+    with pytest.raises(ApiError, match="disabled"):
+        client.memories("a" * 16)
+    with pytest.raises(ApiError, match="disabled"):
+        client.forget("a" * 16)

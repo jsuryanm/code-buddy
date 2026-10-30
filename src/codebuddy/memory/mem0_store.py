@@ -70,6 +70,10 @@ class Mem0LearnerMemory:
             self._memory = Memory.from_config(build_config(self._settings))
         return self._memory
 
+    async def warm(self) -> None:
+        """Build the mem0 instance off the event loop (opens Qdrant and the history DB)."""
+        await asyncio.to_thread(self._mem)
+
     async def recall(self, learner_id: str, query: str, limit: int = 5) -> list[MemoryItem]:
         result = await asyncio.to_thread(
             self._mem().search, query, filters={"user_id": learner_id}, top_k=limit

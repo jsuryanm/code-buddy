@@ -54,16 +54,49 @@ class TutorClient:
             raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
 
     def stream_turn(
-        self, session_id: str, message: str, code: str | None, language: str = "python"
+        self,
+        session_id: str,
+        message: str,
+        code: str | None,
+        language: str = "python",
+        learner_id: str | None = None,
     ) -> Iterator[tuple[str, dict]]:
         payload = {"session_id": session_id, "message": message, "code": code, "language": language}
+        if learner_id:
+            payload["learner_id"] = learner_id
         return self._stream("/v1/turn", payload)
 
     def stream_show_answer(
-        self, session_id: str, code: str | None, language: str = "python"
+        self,
+        session_id: str,
+        code: str | None,
+        language: str = "python",
+        learner_id: str | None = None,
     ) -> Iterator[tuple[str, dict]]:
         payload = {"session_id": session_id, "code": code, "language": language}
+        if learner_id:
+            payload["learner_id"] = learner_id
         return self._stream("/v1/show-answer", payload)
+
+    def _memory_call(self, method: str, learner_id: str) -> dict:
+        try:
+            resp = self._http.request(method, f"/v1/memory/{learner_id}")
+        except httpx.HTTPError as exc:
+            raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
+        if resp.status_code != 200:
+            detail = (
+                resp.json().get("detail")
+                if resp.headers.get("content-type", "").startswith("application/json")
+                else resp.text[:200]
+            )
+            raise ApiError(f"Memory request failed ({resp.status_code}): {detail}")
+        return resp.json()
+
+    def memories(self, learner_id: str) -> list[dict]:
+        return self._memory_call("GET", learner_id)["items"]
+
+    def forget(self, learner_id: str) -> int:
+        return self._memory_call("DELETE", learner_id)["deleted"]
 
     def stream_approve(
         self, session_id: str, turn_id: str, approve: bool, remember: bool = True

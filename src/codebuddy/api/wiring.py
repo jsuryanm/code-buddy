@@ -22,6 +22,7 @@ from codebuddy.cache.semantic import SemanticIndex
 from codebuddy.cache.upstash import UpstashCache
 from codebuddy.config import Settings
 from codebuddy.llm import build_embeddings, build_tiers
+from codebuddy.memory.mem0_store import Mem0LearnerMemory
 from codebuddy.metrics import Metrics
 from codebuddy.pedagogy.judge import LeakJudge
 from codebuddy.rag.rerank import CrossEncoderReranker, NoopReranker
@@ -80,6 +81,15 @@ async def build_resources(settings: Settings) -> Resources:
         conn = await stack.enter_async_context(aiosqlite.connect(settings.checkpoint_path))
         saver = AsyncSqliteSaver(conn, serde=checkpoint_serde())
 
+        memory = None
+        if settings.memory_enabled:
+            memory = Mem0LearnerMemory(settings)
+            try:
+                await memory.warm()  # open the stores now, not during a learner's first turn
+            except Exception:
+                log.exception("Learner memory failed to start; continuing without it")
+                memory = None
+
         namespace = f"{settings.index_version}:{settings.prompt_version}:{settings.model_standard}"
         deps = Deps(
             settings=settings,
@@ -99,6 +109,7 @@ async def build_resources(settings: Settings) -> Resources:
                 ttl=settings.ttl_answer,
             ),
             cache=cache,
+            memory=memory,
         )
         judge = LeakJudge.from_model(tiers.fast_base) if settings.judge_sample_rate > 0 else None
         return Resources(deps, cache_kind, build_speech_to_text(settings), judge, saver, stack)

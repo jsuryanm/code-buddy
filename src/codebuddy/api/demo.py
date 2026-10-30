@@ -22,6 +22,7 @@ from codebuddy.cache.layers import AnswerCache, SessionStore
 from codebuddy.cache.memory import InMemoryCache
 from codebuddy.config import Settings
 from codebuddy.llm import Tiers
+from codebuddy.memory.store import InMemoryLearnerMemory
 from codebuddy.rag.fakes import HashSparse
 from codebuddy.rag.ingest import ingest_file
 from codebuddy.rag.manifest import Manifest
@@ -105,6 +106,7 @@ def build_demo_deps() -> Deps:
         sessions=SessionStore(cache, ttl=3600),
         answers=AnswerCache(cache, ttl=3600),
         tools=LocalToolRunner(),  # real sandbox, so the permission prompt is genuine
+        memory=InMemoryLearnerMemory(),
     )
 
 

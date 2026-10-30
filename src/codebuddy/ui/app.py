@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 import uuid
 
 import streamlit as st
@@ -27,6 +28,7 @@ LEVEL_NAMES = {
     3: "Hint 4: a plan",
     4: "Full answer",
 }
+MEMORY_BOX = "remember_me"
 RESET_KEYS = (
     "session_id",
     "messages",
@@ -142,11 +144,62 @@ def handle_voice(client, enabled: bool) -> None:
                 st.warning(f"{exc}. You can type your question instead.")
 
 
+def forget_me(client) -> None:
+    """Button callback: delete the server-side memory, then reset the opt-in."""
+    ss = st.session_state
+    try:
+        ss["forget_result"] = f"{client.forget(ss['learner_id'])} remembered items deleted."
+    except ApiError as exc:
+        ss["forget_result"] = f"error: {exc}"
+        return
+    ss["learner_id"] = None
+    ss[MEMORY_BOX] = False
+    st.query_params.pop("learner", None)
+
+
+def memory_sidebar(client) -> str | None:
+    """Opt-in box, what is remembered, and "Forget me". Returns the learner id while enabled."""
+    ss = st.session_state
+    if MEMORY_BOX not in ss:
+        ss[MEMORY_BOX] = "learner" in st.query_params
+        if ss[MEMORY_BOX]:
+            ss["learner_id"] = st.query_params["learner"]
+    if st.checkbox("Remember me across sessions", key=MEMORY_BOX):
+        if not ss.get("learner_id"):
+            ss["learner_id"] = secrets.token_urlsafe(16)
+        st.query_params["learner"] = ss["learner_id"]
+    st.caption(
+        "If on, the server stores short notes about what you struggle with and which answers "
+        "you were shown. Bookmark this page to keep them. 'Forget me' deletes them."
+    )
+    if ss.get("forget_result"):
+        (st.error if ss["forget_result"].startswith("error") else st.markdown)(
+            ss.pop("forget_result")
+        )
+    if not ss.get(MEMORY_BOX):
+        return None
+    with st.expander("What I remember about you"):
+        try:
+            items = client.memories(ss["learner_id"])
+        except ApiError as exc:
+            st.warning(str(exc))
+            items = []
+        if not items:
+            st.caption("Nothing yet.")
+        for kind in sorted({i["kind"] for i in items}):
+            st.markdown(f"**{kind}**")
+            for item in (i for i in items if i["kind"] == kind):
+                st.markdown(f"- {item['text']}")
+    st.button("Forget me", key="forget_me", on_click=forget_me, args=(client,))
+    return ss["learner_id"]
+
+
 def main() -> None:
     st.set_page_config(page_title="CodeBuddy", page_icon="🧭", layout="wide")
     init_state()
     ss = st.session_state
 
+    learner_id = None
     with st.sidebar:
         st.title("CodeBuddy")
         base_url = st.text_input("API URL", os.getenv("CODEBUDDY_API_URL", "http://localhost:8000"))
@@ -168,6 +221,8 @@ def main() -> None:
                 f"Tools: {health.get('tools', 'off')} · voice: "
                 f"{'on' if health.get('stt_configured') else 'off'}"
             )
+            if health.get("memory_enabled"):
+                learner_id = memory_sidebar(client)
         st.caption(f"Session {ss.session_id[:8]}")
 
     st.subheader("Let's work it out together")
@@ -226,6 +281,7 @@ def main() -> None:
         return
 
     session_id = ss.session_id
+    who = {"learner_id": learner_id} if learner_id else {}
     if approve_clicked or decline_clicked:
         turn_id = ss.pending["turn_id"]
         decision = approve_clicked
@@ -236,10 +292,14 @@ def main() -> None:
         user_text = None
     elif show_clicked:
         user_text = "Show me the full answer."
-        events = lambda: client.stream_show_answer(session_id, code or None, language)  # noqa: E731
+        events = lambda: client.stream_show_answer(  # noqa: E731
+            session_id, code or None, language, **who
+        )
     else:
         user_text = prompt
-        events = lambda: client.stream_turn(session_id, prompt, code or None, language)  # noqa: E731
+        events = lambda: client.stream_turn(  # noqa: E731
+            session_id, prompt, code or None, language, **who
+        )
 
     if user_text:
         ss.messages.append({"role": "user", "content": user_text})
