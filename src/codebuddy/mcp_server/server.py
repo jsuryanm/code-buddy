@@ -8,11 +8,11 @@ The tutor asks the learner before it calls trace_python (see agent/nodes.py).
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from codebuddy.tools import functions
 
-mcp = FastMCP("codebuddy-tools")
+mcp = MCPServer("codebuddy-tools")
 
 
 @mcp.tool()

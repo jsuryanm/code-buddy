@@ -97,14 +97,14 @@ trace and usually costs money per run or per sandbox-minute; the local backend h
 
 ## MCP
 
-`mcp_server/server.py` is a FastMCP server over stdio exposing the three tools.
+`mcp_server/server.py` is an `MCPServer` (mcp 2.x) over stdio exposing the three tools.
 
 ```bash
 uv run python -m codebuddy.mcp_server     # speaks MCP on stdin/stdout
 ```
 
 In the API, `tools/runner.MCPToolRunner` starts that server once as a subprocess, keeps one
-session open for the life of the app through `langchain-mcp-adapters`, and closes it on shutdown.
+session open for the life of the app through `langchain.mcp` (`MCPAdapter`), and closes it on shutdown.
 `CODEBUDDY_MCP_ENABLED=false` calls the same functions in-process (`LocalToolRunner`), and `CODEBUDDY_TOOLS_ENABLED=false` turns tool use off entirely. If the MCP
 server fails to start the API logs a warning and falls back to in-process calls.
 `tests/unit/test_tools.py` starts a real MCP server and calls two tools through it.

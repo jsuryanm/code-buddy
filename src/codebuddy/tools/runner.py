@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import warnings
 from typing import Any, Protocol
+
+from langchain_core._api import LangChainBetaWarning
 
 from codebuddy.tools.functions import TOOLS
 
@@ -27,7 +30,7 @@ class LocalToolRunner:
 
 
 def _decode(result: Any) -> dict:
-    """MCP adapters return text content (a JSON string) or a list of content blocks."""
+    """langchain.mcp tools return a list of text blocks holding a JSON string."""
     if isinstance(result, dict):
         return result
     if isinstance(result, list):
@@ -43,21 +46,25 @@ class MCPToolRunner:
         self._tools: dict[str, Any] = {}
 
     async def start(self) -> None:
-        from langchain_mcp_adapters.client import MultiServerMCPClient
-        from langchain_mcp_adapters.tools import load_mcp_tools
+        # langchain.mcp is beta and warns on import; the warning is expected here.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", LangChainBetaWarning)
+            from langchain.mcp import MCPAdapter
 
-        client = MultiServerMCPClient(
+        adapter = MCPAdapter(
             {
-                "codebuddy": {
-                    "command": sys.executable,
-                    "args": ["-m", "codebuddy.mcp_server"],
-                    "transport": "stdio",
+                "mcpServers": {
+                    "codebuddy": {
+                        "command": sys.executable,
+                        "args": ["-m", "codebuddy.mcp_server"],
+                    }
                 }
             }
         )
-        self._cm = client.session("codebuddy")
-        session = await self._cm.__aenter__()
-        self._tools = {t.name: t for t in await load_mcp_tools(session)}
+        # Holding the context open makes every tool call reuse one connection.
+        await adapter.__aenter__()
+        self._cm = adapter
+        self._tools = {t.name: t for t in await adapter.list_tools()}
 
     async def call(self, name: str, **args: Any) -> dict:
         return _decode(await self._tools[name].ainvoke(args))

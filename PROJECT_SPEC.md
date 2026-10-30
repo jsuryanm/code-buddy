@@ -560,7 +560,7 @@ Proposed MCP servers/tools:
 
 MCP practices: pin server versions, authenticate (OAuth/API keys), scope per user, validate all inputs, log every call, rate limit, and treat tool descriptions from third-party servers as untrusted.
 
-> **Built in v0.4.** `analyze_python` (read), `suggest_cases` (read), and `trace_python` (execute) are served over MCP stdio and called through `langchain-mcp-adapters`. Rules, not the model, choose tools. `trace_python` runs the learner's code in an allowlist-based sandbox with resource limits and, where the host allows, no network; this is defense in depth and not a security boundary (ADR 0006). The remaining table rows (`save_progress`, `reveal_solution`, `instructor_publish_material`, `send_report_to_instructor`) are not built; the `write_shared` risk class exists and never auto-runs.
+> **Built in v0.4.** `analyze_python` (read), `suggest_cases` (read), and `trace_python` (execute) are served over MCP stdio and called through `langchain.mcp`. Rules, not the model, choose tools. `trace_python` runs the learner's code in an allowlist-based sandbox with resource limits and, where the host allows, no network; this is defense in depth and not a security boundary (ADR 0006). The remaining table rows (`save_progress`, `reveal_solution`, `instructor_publish_material`, `send_report_to_instructor`) are not built; the `write_shared` risk class exists and never auto-runs.
 
 ### 12.4 Human-in-the-loop (HITL)
 
@@ -940,7 +940,7 @@ Use the integrations below before writing custom code. Custom code stays only fo
 | Rerank | Plain function that scores candidates with a local cross-encoder (preferred; avoids `langchain-classic`) | Nothing to replace; too small to need a framework |
 | LLM response cache | LangChain cache backed by Upstash Redis | Generic LLM-call cache (L1/L2/L4 keep custom keys because they need pedagogy context) |
 | Chat history | Upstash Redis chat message history | Custom session store |
-| MCP tools | `langchain-mcp-adapters` turns MCP server tools into LangChain tools | Custom MCP-to-tool bridge |
+| MCP tools | `langchain.mcp` (`langchain[mcp]`) turns MCP server tools into LangChain tools | Custom MCP-to-tool bridge |
 | Agent graph and HITL | LangGraph `interrupt` with a Postgres checkpointer (`langgraph-checkpoint-postgres`) | Custom checkpoint and resume |
 | Tracing | Langfuse LangChain callback handler | Manual span code |
 | Evals | DeepEval or Ragas (both work on LangChain outputs) | Custom eval harness |
@@ -958,7 +958,7 @@ LangChain v1 moved legacy code out of the core `langchain` package. Per the offi
 | `langgraph` | Tutor graph, checkpointing, interrupts | Core dependency |
 | `langchain-openai` | `ChatOpenAI`, `OpenAIEmbeddings` | Core (provider package) |
 | `langchain-qdrant` | `QdrantVectorStore`, hybrid mode | Core (provider package) |
-| `langchain-mcp-adapters` | MCP server tools as LangChain tools | Core dependency |
+| `langchain[mcp]` | MCP server tools as LangChain tools (`langchain.mcp`, beta) | Core dependency |
 | `langchain-community` | Document loaders not covered elsewhere (PDF, HTML, notebooks); Upstash integration if it lives here | **Allowed**, pinned, used for loaders and integrations only |
 | `langchain-classic` | Only for a legacy class we need and cannot replace cheaply | **Avoid by default**; add it only with a documented reason in an ADR |
 

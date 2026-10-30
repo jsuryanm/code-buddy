@@ -26,7 +26,7 @@ src/codebuddy/
     functions.py       analyze_python, suggest_cases, trace_python
     policy.py          Risk classes and the ask / allow / deny rule
     runner.py          LocalToolRunner (in-process) and MCPToolRunner (stdio MCP session)
-  mcp_server/          FastMCP server exposing the tools (python -m codebuddy.mcp_server)
+  mcp_server/          MCPServer exposing the tools (python -m codebuddy.mcp_server)
   sandbox/             check.py (allowlist), harness.py (child program), runner.py (subprocess)
   stt/
     transcribe.py      Groq Whisper and OpenAI transcribers behind SpeechToText
