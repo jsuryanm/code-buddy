@@ -62,12 +62,19 @@ def html_to_markdown(html: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "".join(parser.out)).strip()
 
 
+def tidy_docling_markdown(markdown: str) -> str:
+    """Docling writes every heading as '##'. A line starting with a single '#' is a comment
+    from an unfenced code listing, so indent it to keep it from being read as a heading."""
+    return re.sub(r"(?m)^# ", "    # ", markdown)
+
+
 def pdf_to_markdown(path: Path) -> str:  # pragma: no cover - needs the pdf extra
     try:
         from docling.document_converter import DocumentConverter
     except ImportError as exc:
         raise RuntimeError("PDF ingestion needs the extra: uv sync --extra pdf") from exc
-    return DocumentConverter().convert(str(path)).document.export_to_markdown()
+    markdown = DocumentConverter().convert(str(path)).document.export_to_markdown()
+    return tidy_docling_markdown(markdown)
 
 
 def load_markdown(path: Path) -> str:

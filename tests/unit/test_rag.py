@@ -105,3 +105,16 @@ async def test_filters_restrict_results(stores, settings, tmp_path):
     r = Retriever(stores, settings, allowed={"fundamentals"})
     res = await r.retrieve("loop", filters={"content_type": "exercise"})
     assert res.chunks and all(c.meta["content_type"] == "exercise" for c in res.chunks)
+
+
+def test_docling_code_comments_do_not_become_headings():
+    from codebuddy.rag.ingest import tidy_docling_markdown
+
+    md = (
+        "## Recursion\n\nA function can call itself.\n\n"
+        "# inside class Hand:\ndef f(n):\n    return 0\n"
+    )
+    chunks = chunk_markdown(tidy_docling_markdown(md), {"title": "Book", "source": "b.pdf"})
+    assert {c.meta["chapter"] for c in chunks} == {"Recursion"}
+    assert all("inside class Hand" not in c.meta["section"] for c in chunks)
+    assert any("# inside class Hand:" in c.text for c in chunks)  # the comment text is kept
