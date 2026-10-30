@@ -344,3 +344,46 @@ async def test_shutdown_waits_for_background_writes(make_harness, monkeypatch, c
         h.deps.spawn(stuck.wait())
     assert not h.deps.background
     assert "cancelled 1 background task(s)" in caplog.text
+
+
+class HeldWrites(InMemoryLearnerMemory):
+    """Writes wait until released, so a test can Forget between scheduling and execution."""
+
+    def __init__(self):
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def remember(self, learner_id, history, episode, *, since=None):
+        await self.release.wait()
+        await super().remember(learner_id, history, episode, since=since)
+
+
+async def test_forget_between_scheduling_and_writing_leaves_nothing(make_harness):
+    memory = HeldWrites()
+    h = make_harness(memory=memory)
+    async with client_for(h, memory_write_every=1) as client:
+        a = await new_token(client)
+        body = {"session_id": "s1", "message": "why is my loop wrong", "code": BUGGY}
+        assert (await client.post("/v1/turn", json={**body, "learner_id": a})).status_code == 200
+        assert h.deps.background  # the write is scheduled, not yet run
+        assert (await client.delete("/v1/memory", headers=tok(a))).status_code == 200
+        memory.release.set()
+        await drain(h)
+    assert await memory.all(a.split(".")[0]) == []
+
+
+async def test_a_write_after_forget_holds_only_later_turns(make_harness):
+    memory = InMemoryLearnerMemory()
+    h = make_harness(memory=memory)
+    async with client_for(h, memory_write_every=1) as client:
+        a = await new_token(client)
+        body = {"session_id": "s1", "code": BUGGY, "learner_id": a}
+        await client.post("/v1/turn", json={**body, "message": "before forget my loop is wrong"})
+        await drain(h)
+        assert (await client.delete("/v1/memory", headers=tok(a))).status_code == 200
+        h.clock_now += 1
+        await client.post("/v1/turn", json={**body, "message": "after forget my loop is wrong"})
+        await drain(h)
+    texts = [i.text for i in await memory.all(a.split(".")[0])]
+    assert "after forget my loop is wrong" in texts
+    assert not any("before forget" in t for t in texts)

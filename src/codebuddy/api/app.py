@@ -31,6 +31,7 @@ from codebuddy.api.security import (
     enforce_rate_limit,
     parse_keys,
 )
+from codebuddy.cache import keys
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
@@ -345,7 +346,11 @@ def create_app(
     @app.delete("/v1/memory")
     async def memory_forget(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
         memory = memory_store()
-        return {"deleted": await memory.forget(verified_learner(learner_token, key))}
+        learner_id = verified_learner(learner_token, key)
+        deleted = await memory.forget(learner_id)
+        d = current()  # session turns from before now are never written again
+        await d.cache.set(keys.forgot_key(learner_id), str(d.clock()), keys.FORGOT_TTL)
+        return {"deleted": deleted}
 
     return app
 

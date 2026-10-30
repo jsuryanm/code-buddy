@@ -8,7 +8,7 @@ Notes on the installed mem0 (2.2.x):
 
 Every mem0 call runs under one lock: the embedded Qdrant store is not safe for concurrent use,
 and it orders a background write against Forget. A per-learner epoch, bumped by `forget`, drops
-writes that were still waiting for the lock when the learner asked to be forgotten.
+writes that were scheduled or waiting for the lock when the learner asked to be forgotten.
 """
 
 from __future__ import annotations
@@ -103,14 +103,24 @@ class Mem0LearnerMemory:
         )
         return [_item(r) for r in _rows(result)]
 
+    def generation(self, learner_id: str) -> int:
+        return self._epochs.get(learner_id, 0)
+
     async def remember(
-        self, learner_id: str, history: list[dict[str, str]], episode: Episode
+        self,
+        learner_id: str,
+        history: list[dict[str, str]],
+        episode: Episode,
+        *,
+        since: int | None = None,
     ) -> None:
-        epoch = self._epochs.get(learner_id, 0)  # taken before waiting for the lock
+        # The caller passes the epoch from when it scheduled the write; else take it now,
+        # before waiting for the lock.
+        epoch = self.generation(learner_id) if since is None else since
         messages = [{"role": ROLES[h["role"]], "content": h["text"]} for h in history]
 
         def write() -> None:
-            if self._epochs.get(learner_id, 0) == epoch:  # else forgotten while waiting
+            if self.generation(learner_id) == epoch:  # else forgotten since scheduling
                 self._write(learner_id, messages, episode)
 
         await self._locked(write)

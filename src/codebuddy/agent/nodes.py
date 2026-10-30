@@ -404,9 +404,11 @@ class TutorNodes:
 
     # -- output ----------------------------------------------------------------------
 
-    def _remember(self, state: TutorState, decision: Decision, progress, hints_before: int) -> None:
+    async def _remember(
+        self, state: TutorState, decision: Decision, progress, hints_before: int
+    ) -> None:
         learner_id = state.get("learner_id")
-        if not (self.d.memory and learner_id):
+        if not (self.d.memory and learner_id and progress.learner_id == learner_id):
             return
         every = self.d.settings.memory_write_every
         revealed = decision.mode is Mode.REVEAL
@@ -418,11 +420,18 @@ class TutorNodes:
             hints_before,
             "revealed" if revealed else "in_progress",
         )
-        self.d.spawn(self._write_memory(learner_id, progress.history, episode))
+        since = self.d.memory.generation(learner_id)  # a Forget from now on drops this write
+        history = progress.history
+        if forgot := await self.d.cache.get(keys.forgot_key(learner_id)):
+            # Turns from before Forget me stay in the session; never write them again.
+            history = [h for h in history if float(h.get("at", 0)) > float(forgot)]
+        self.d.spawn(self._write_memory(learner_id, history, episode, since))
 
-    async def _write_memory(self, learner_id: str, history: list[dict], episode: Episode) -> None:
+    async def _write_memory(
+        self, learner_id: str, history: list[dict], episode: Episode, since: int
+    ) -> None:
         try:
-            await self.d.memory.remember(learner_id, history, episode)
+            await self.d.memory.remember(learner_id, history, episode, since=since)
         except Exception:
             log.warning("memory write failed", exc_info=True)
             await self.d.metrics.incr("memory_failures")
@@ -447,14 +456,15 @@ class TutorNodes:
             progress.started_at = 0.0
             progress.repeated_submissions = 0
 
+        at = str(self.d.clock())  # lets a later write skip turns from before Forget me
         progress.history = [
             *progress.history,
-            {"role": "learner", "text": state["message"][:HISTORY_CHARS]},
-            {"role": "tutor", "text": reply[:HISTORY_CHARS]},
+            {"role": "learner", "text": state["message"][:HISTORY_CHARS], "at": at},
+            {"role": "tutor", "text": reply[:HISTORY_CHARS], "at": at},
         ][-HISTORY_TURNS:]
         await self.d.sessions.save(progress)
         await self.d.metrics.incr("turns")
-        self._remember(state, decision, progress, hints_before)
+        await self._remember(state, decision, progress, hints_before)
 
         key = state.get("cache_key")
         retrieval = state.get("retrieval")

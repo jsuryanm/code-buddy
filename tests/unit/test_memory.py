@@ -225,6 +225,24 @@ async def test_a_write_waiting_behind_forget_is_dropped():
     assert len(stub.rows["a"]) == 1
 
 
+@pytest.mark.parametrize("make", [InMemoryLearnerMemory, lambda: Mem0Stored()])
+async def test_a_write_scheduled_before_forget_is_dropped(make):
+    mem = make()
+    since = mem.generation("a")  # taken when the write is scheduled
+    await mem.remember("a", HISTORY, IN_PROGRESS, since=since)
+    assert len(await mem.all("a")) >= 1
+    since = mem.generation("a")
+    await mem.forget("a")
+    await mem.remember("a", HISTORY, IN_PROGRESS, since=since)  # ran after the delete
+    assert await mem.all("a") == []
+    await mem.remember("a", HISTORY, IN_PROGRESS, since=mem.generation("a"))
+    assert len(await mem.all("a")) >= 1
+
+
+def Mem0Stored() -> Mem0LearnerMemory:
+    return Mem0LearnerMemory(Settings(), memory=StoringMem0())
+
+
 def test_build_config_requires_model_fast():
     with pytest.raises(RuntimeError, match="CODEBUDDY_MODEL_FAST"):
         build_config(Settings(model_fast=None))

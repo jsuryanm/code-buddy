@@ -49,5 +49,13 @@ def session_key(session_id: str) -> str:
     return f"{PREFIX}:sess:{session_id}"
 
 
+FORGOT_TTL = 30 * 24 * 60 * 60  # outlives any session that still holds turns from before Forget
+
+
+def forgot_key(learner_id: str) -> str:
+    """When the learner last pressed Forget me; older session turns are never written again."""
+    return f"{PREFIX}:forgot:{learner_id}"
+
+
 def lock_key(key: str) -> str:
     return f"{PREFIX}:lock:{key}"
