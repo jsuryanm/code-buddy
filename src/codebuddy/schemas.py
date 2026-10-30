@@ -6,6 +6,9 @@ from enum import IntEnum, StrEnum
 
 from pydantic import BaseModel, Field
 
+# Server-issued learner token: "<id>.<signature>" (see api/security.py LearnerTokens).
+LEARNER_TOKEN = r"^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$"
+
 
 class PcditStage(StrEnum):
     """PCDIT stages (Kurniawan et al., arXiv:2109.08896)."""
@@ -65,6 +68,7 @@ class SessionProgress(BaseModel):
     reveals: int = 0
     run_permission: str = "ask"  # learner's choice for running their code: ask, allow, deny
     history: list[dict[str, str]] = Field(default_factory=list)  # last few turns, truncated
+    learner_id: str | None = None  # bound on first use with memory; one learner per session
 
 
 class Citation(BaseModel):
@@ -78,14 +82,14 @@ class TurnRequest(BaseModel):
     message: str
     code: str | None = None
     language: str = "python"
-    learner_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    learner_id: str | None = Field(default=None, pattern=LEARNER_TOKEN)
 
 
 class ShowAnswerRequest(BaseModel):
     session_id: str
     code: str | None = None
     language: str = "python"
-    learner_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    learner_id: str | None = Field(default=None, pattern=LEARNER_TOKEN)
 
 
 class ApproveRequest(BaseModel):

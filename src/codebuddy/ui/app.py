@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import secrets
 import uuid
 
 import streamlit as st
@@ -148,34 +147,51 @@ def forget_me(client) -> None:
     """Button callback: delete the server-side memory, then reset the opt-in."""
     ss = st.session_state
     try:
-        ss["forget_result"] = f"{client.forget(ss['learner_id'])} remembered items deleted."
+        ss["memory_note"] = f"{client.forget(ss['learner_id'])} remembered items deleted."
     except ApiError as exc:
-        ss["forget_result"] = f"error: {exc}"
+        ss["memory_note"] = f"error: {exc}"
         return
     ss["learner_id"] = None
     ss[MEMORY_BOX] = False
     st.query_params.pop("learner", None)
 
 
-def memory_sidebar(client) -> str | None:
-    """Opt-in box, what is remembered, and "Forget me". Returns the learner id while enabled."""
+def enable_memory(client) -> None:
+    """Checkbox callback: ticking the box asks the server for a new learner token."""
     ss = st.session_state
-    if MEMORY_BOX not in ss:
-        ss[MEMORY_BOX] = "learner" in st.query_params
-        if ss[MEMORY_BOX]:
-            ss["learner_id"] = st.query_params["learner"]
-    if st.checkbox("Remember me across sessions", key=MEMORY_BOX):
-        if not ss.get("learner_id"):
-            ss["learner_id"] = secrets.token_urlsafe(16)
-        st.query_params["learner"] = ss["learner_id"]
+    if not ss[MEMORY_BOX] or ss.get("learner_id"):
+        return
+    try:
+        ss["learner_id"] = client.new_learner()
+    except ApiError as exc:
+        ss["memory_note"] = f"error: {exc}"
+        ss[MEMORY_BOX] = False
+        return
+    st.query_params["learner"] = ss["learner_id"]
+
+
+def use_profile() -> None:
+    """Button callback: the learner chose the profile in the link. A link alone never does."""
+    ss = st.session_state
+    ss["learner_id"] = st.query_params["learner"]
+    ss[MEMORY_BOX] = True
+
+
+def memory_sidebar(client) -> str | None:
+    """Opt-in box, what is remembered, and "Forget me". Returns the learner token while enabled."""
+    ss = st.session_state
+    st.checkbox(
+        "Remember me across sessions", key=MEMORY_BOX, on_change=enable_memory, args=(client,)
+    )
+    if "learner" in st.query_params and not ss.get(MEMORY_BOX):
+        st.markdown("This link contains a saved learner profile. Use it only if you created it.")
+        st.button("Use this profile", key="use_profile", on_click=use_profile)
     st.caption(
         "If on, the server stores short notes about what you struggle with and which answers "
         "you were shown. Bookmark this page to keep them. 'Forget me' deletes them."
     )
-    if ss.get("forget_result"):
-        (st.error if ss["forget_result"].startswith("error") else st.markdown)(
-            ss.pop("forget_result")
-        )
+    if ss.get("memory_note"):
+        (st.error if ss["memory_note"].startswith("error") else st.markdown)(ss.pop("memory_note"))
     if not ss.get(MEMORY_BOX):
         return None
     with st.expander("What I remember about you"):

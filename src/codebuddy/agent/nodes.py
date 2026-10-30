@@ -88,6 +88,8 @@ class TutorNodes:
             else:
                 progress.repeated_submissions = 0
                 progress.last_submission_hash = digest
+        if state.get("learner_id") and progress.learner_id is None:
+            progress.learner_id = state["learner_id"]  # the API refuses other learners from now on
         return {"progress": progress, "message": message, "code": code or None}
 
     async def analyze_code(self, state: TutorState) -> dict:

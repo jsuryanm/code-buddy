@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ from langgraph.types import Command
 from codebuddy.agent.deps import Deps
 from codebuddy.agent.graph import build_graph, new_turn_id, run_turn
 from codebuddy.api.security import (
+    LearnerTokens,
     PendingApprovals,
     check_api_key,
     enforce_rate_limit,
@@ -32,7 +34,13 @@ from codebuddy.api.security import (
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
-from codebuddy.schemas import ApproveRequest, Mode, ShowAnswerRequest, TurnRequest
+from codebuddy.schemas import (
+    LEARNER_TOKEN,
+    ApproveRequest,
+    Mode,
+    ShowAnswerRequest,
+    TurnRequest,
+)
 from codebuddy.stt.transcribe import TranscriptionError
 
 log = logging.getLogger("codebuddy.api")
@@ -77,6 +85,16 @@ def create_app(
         app.state.speech, app.state.judge = stt, jdg
         app.state.graph = build_graph(d, saver)
         app.state.pending = PendingApprovals(d.cache)
+        app.state.tokens = None
+        if d.memory:
+            secret = d.settings.memory_secret.encode()
+            if not secret:
+                log.warning(
+                    "CODEBUDDY_MEMORY_SECRET is not set; using a random secret, so learner "
+                    "tokens stop working after a restart"
+                )
+                secret = secrets.token_bytes(32)
+            app.state.tokens = LearnerTokens(secret)
 
     if deps is not None:
         _install(app, deps, cache_kind, speech, judge, checkpointer)
@@ -93,11 +111,28 @@ def create_app(
     def current() -> Deps:
         return app.state.deps
 
-    async def guard(request: Request) -> None:
-        """Authenticate, then rate limit. Runs before every /v1 route."""
+    async def guard(request: Request) -> str | None:
+        """Authenticate, then rate limit. Runs before every /v1 route. Returns the API key."""
         d = current()
         key = check_api_key(request, d.settings)
         await enforce_rate_limit(request, d.settings, d.cache, d.metrics, key)
+        return key
+
+    def verified_learner(token: str, key: str | None) -> str:
+        learner_id = app.state.tokens.verify(token, key)
+        if learner_id is None:
+            raise HTTPException(403, "Invalid learner token")
+        return learner_id
+
+    async def turn_learner(session_id: str, token: str | None, key: str | None) -> str | None:
+        """The verified learner id for a turn (None without memory). Checked before streaming."""
+        if not (token and current().memory):
+            return None
+        learner_id = verified_learner(token, key)
+        bound = (await current().sessions.load(session_id)).learner_id
+        if bound and not secrets.compare_digest(bound.encode(), learner_id.encode()):
+            raise HTTPException(409, "This session belongs to another learner")
+        return learner_id
 
     # -- health and metrics ----------------------------------------------------------
 
@@ -198,21 +233,23 @@ def create_app(
         session_id: str, message: str, code: str | None, language: str, learner_id: str | None
     ):
         inputs = {"session_id": session_id, "message": message, "code": code, "language": language}
-        if learner_id and current().memory:
+        if learner_id:
             inputs["learner_id"] = learner_id
         return run_turn(app.state.graph, inputs, new_turn_id())
 
-    @app.post("/v1/turn", dependencies=[Depends(guard)])
-    async def turn(req: TurnRequest):
+    @app.post("/v1/turn")
+    async def turn(req: TurnRequest, key: str | None = Depends(guard)):
         if not req.message.strip():
             raise HTTPException(422, "message must not be empty")
-        events = turn_events(req.session_id, req.message, req.code, req.language, req.learner_id)
+        learner_id = await turn_learner(req.session_id, req.learner_id, key)
+        events = turn_events(req.session_id, req.message, req.code, req.language, learner_id)
         return stream_response(events, req.session_id, req.code)
 
-    @app.post("/v1/show-answer", dependencies=[Depends(guard)])
-    async def show_answer(req: ShowAnswerRequest):
+    @app.post("/v1/show-answer")
+    async def show_answer(req: ShowAnswerRequest, key: str | None = Depends(guard)):
+        learner_id = await turn_learner(req.session_id, req.learner_id, key)
         events = turn_events(
-            req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language, req.learner_id
+            req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language, learner_id
         )
         return stream_response(events, req.session_id, req.code)
 
@@ -265,25 +302,32 @@ def create_app(
 
     # -- learner memory (privacy) ----------------------------------------------------
 
-    LearnerId = Path(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    LearnerToken = Path(pattern=LEARNER_TOKEN)
 
     def memory_store() -> LearnerMemory:
         if (memory := current().memory) is None:
             raise HTTPException(503, "Long-term memory is not enabled")
         return memory
 
-    @app.get("/v1/memory/{learner_id}", dependencies=[Depends(guard)])
-    async def memory_list(learner_id: str = LearnerId):
-        items = await memory_store().all(learner_id)
+    @app.post("/v1/memory/learners")
+    async def memory_new_learner(key: str | None = Depends(guard)):
+        memory_store()
+        return {"learner_token": app.state.tokens.issue(key)}
+
+    @app.get("/v1/memory/{learner_token}")
+    async def memory_list(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
+        memory = memory_store()
+        items = await memory.all(verified_learner(learner_token, key))
         return {
             "items": [
                 {"kind": i.kind.value, "text": i.text, "created_at": i.created_at} for i in items
             ]
         }
 
-    @app.delete("/v1/memory/{learner_id}", dependencies=[Depends(guard)])
-    async def memory_forget(learner_id: str = LearnerId):
-        return {"deleted": await memory_store().forget(learner_id)}
+    @app.delete("/v1/memory/{learner_token}")
+    async def memory_forget(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
+        memory = memory_store()
+        return {"deleted": await memory.forget(verified_learner(learner_token, key))}
 
     return app
 

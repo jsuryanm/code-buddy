@@ -127,17 +127,25 @@ def test_learner_id_is_sent_only_when_set():
 
 def test_memories_and_forget_call_the_memory_routes():
     seen = []
+    token = "a" * 22 + "." + "b" * 43
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append((request.method, request.url.path))
+        if request.method == "POST":
+            return httpx.Response(200, json={"learner_token": token})
         if request.method == "GET":
             return httpx.Response(200, json={"items": [{"kind": "semantic", "text": "x"}]})
         return httpx.Response(200, json={"deleted": 3})
 
     client = TutorClient("http://api", transport=httpx.MockTransport(handler))
-    assert client.memories("a" * 16) == [{"kind": "semantic", "text": "x"}]
-    assert client.forget("a" * 16) == 3
-    assert seen == [("GET", f"/v1/memory/{'a' * 16}"), ("DELETE", f"/v1/memory/{'a' * 16}")]
+    assert client.new_learner() == token
+    assert client.memories(token) == [{"kind": "semantic", "text": "x"}]
+    assert client.forget(token) == 3
+    assert seen == [
+        ("POST", "/v1/memory/learners"),
+        ("GET", f"/v1/memory/{token}"),
+        ("DELETE", f"/v1/memory/{token}"),
+    ]
 
 
 def test_memory_failures_have_readable_messages():
@@ -149,3 +157,5 @@ def test_memory_failures_have_readable_messages():
         client.memories("a" * 16)
     with pytest.raises(ApiError, match="disabled"):
         client.forget("a" * 16)
+    with pytest.raises(ApiError, match="disabled"):
+        client.new_learner()

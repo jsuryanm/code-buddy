@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import secrets
 import time
 
@@ -54,6 +56,33 @@ async def enforce_rate_limit(
     if await cache.incr(bucket, ttl=70) > limit:
         await metrics.incr("rate_limited")
         raise HTTPException(429, "Too many requests", headers={"Retry-After": str(60 - now % 60)})
+
+
+class LearnerTokens:
+    """Signed learner tokens "<id>.<sig>", bound to the API key that minted them.
+
+    Memory is stored under the id; the signature makes ids unguessable and unforgeable.
+    """
+
+    def __init__(self, secret: bytes):
+        self._secret = secret
+
+    def _sign(self, learner_id: str, api_key: str | None) -> str:
+        bound = hashlib.sha256((api_key or "").encode()).hexdigest()
+        mac = hmac.new(self._secret, f"{learner_id}|{bound}".encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(mac).rstrip(b"=").decode()
+
+    def issue(self, api_key: str | None) -> str:
+        learner_id = secrets.token_urlsafe(16)
+        return f"{learner_id}.{self._sign(learner_id, api_key)}"
+
+    def verify(self, token: str, api_key: str | None) -> str | None:
+        """The learner id, or None when the token is malformed, forged, or from another key."""
+        learner_id, _, sig = token.partition(".")
+        if not (learner_id and sig):
+            return None
+        expected = self._sign(learner_id, api_key)
+        return learner_id if hmac.compare_digest(sig.encode(), expected.encode()) else None
 
 
 class PendingApprovals:
