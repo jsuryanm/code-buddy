@@ -127,8 +127,11 @@ def ingest_file(
 
 
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs live OpenAI
+    from dotenv import load_dotenv
     from langchain_openai import OpenAIEmbeddings
     from langchain_qdrant import FastEmbedSparse
+
+    load_dotenv()  # SDKs read OPENAI_API_KEY from the environment, not from Settings
 
     from codebuddy.rag.store import get_store, make_client
 

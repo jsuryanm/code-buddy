@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from dotenv import load_dotenv
 from langchain_qdrant import FastEmbedSparse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -66,6 +67,7 @@ class Resources:
 
 
 async def build_resources(settings: Settings) -> Resources:
+    load_dotenv()  # SDKs (OpenAI, Groq, Upstash) read their keys from the environment
     stack = AsyncExitStack()
     try:
         cache, cache_kind = build_cache()
