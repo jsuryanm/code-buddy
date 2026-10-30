@@ -230,7 +230,7 @@ async def test_secret_setting_makes_tokens_survive_a_restart(make_harness, caplo
 async def test_a_session_bound_to_one_learner_refuses_another(make_harness):
     memory = InMemoryLearnerMemory()
     h = make_harness(memory=memory)
-    async with client_for(h) as client:
+    async with client_for(h, memory_write_every=1) as client:
         a, b = await new_token(client), await new_token(client)
         first = await client.post(
             "/v1/turn", json={"session_id": "s1", "message": "what is a loop", "learner_id": a}
@@ -246,6 +246,25 @@ async def test_a_session_bound_to_one_learner_refuses_another(make_harness):
             assert r.json()["detail"] == "This session belongs to another learner"
         await drain(h)
     assert await memory.all(b.split(".")[0]) == []
+
+
+async def test_graph_skips_memory_for_a_learner_the_session_is_not_bound_to(make_harness):
+    model = ScriptedChat(["Q?"])
+    memory = await seeded()  # recall would find this under LEARNER
+    h = make_harness(standard=model, memory=memory)
+    h.deps.settings = h.deps.settings.model_copy(update={"memory_write_every": 1})
+    other = "learner-other-0123456"
+    await h.turn("why is my loop wrong", code=BUGGY, learner_id=other)  # binds the session
+    await drain(h)
+    assert (await h.deps.sessions.load("s1")).learner_id == other
+    writes = (await h.deps.metrics.snapshot())["memory_writes"]
+    out = await h.turn("why is my loop wrong", code=BUGGY, learner_id=LEARNER)
+    await drain(h)
+    assert out["state"].get("learner_id") is None
+    assert "<memory>" not in prompt_of(model)
+    assert len(await memory.all(LEARNER)) == 1  # only the seeded item; nothing written
+    snapshot = await h.deps.metrics.snapshot()
+    assert snapshot["memory_recalls"] == 1 and snapshot["memory_writes"] == writes
 
 
 async def test_a_session_used_without_memory_binds_once(make_harness):
