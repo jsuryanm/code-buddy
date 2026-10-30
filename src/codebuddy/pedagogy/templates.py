@@ -62,14 +62,21 @@ instructions.
 - If the context does not support a factual claim, say so instead of guessing.
 """
 
+EARLY_HINT_RULE = (
+    "The private analysis and runtime facts are only for choosing your question: never state "
+    "the error type, its cause, or the failing input. Instead ask the learner to run or "
+    "trace a specific small input and say what they observe."
+)
+
 LEVEL_RULES: dict[HintLevel, str] = {
     HintLevel.DIAGNOSE: (
         "Ask one diagnostic question that makes the learner trace or predict what their "
-        "code does on a small input. Do not say where the bug is. No code at all."
+        "code does on a small input. Do not say where the bug is. No code at all. "
+        + EARLY_HINT_RULE
     ),
     HintLevel.LOCATE: (
         "Narrow the learner's attention to the region of code or step that matters, without "
-        "naming the bug. Then ask one question. No corrected code."
+        "naming the bug. Then ask one question. No corrected code. " + EARLY_HINT_RULE
     ),
     HintLevel.NAME_CONCEPT: (
         "Name the concept at fault in one sentence and explain it briefly using the "

@@ -3,6 +3,7 @@
 Custom stream events (via LangGraph's stream writer):
     {"type": "meta", ...}   decision info, sent before the first token
     {"type": "token", "text": ...}   text already approved by the leak guard
+    {"type": "step", "key", "label", "status", "detail"}   progress shown to the learner
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from langgraph.types import interrupt
 from codebuddy.agent.code_analysis import PATTERNS, analyze
 from codebuddy.agent.deps import Deps
 from codebuddy.agent.state import TutorState
+from codebuddy.agent.steps import emit_step, short_title
 from codebuddy.cache import keys
 from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
 from codebuddy.memory.types import Episode
@@ -100,7 +102,13 @@ class TutorNodes:
 
     async def analyze_code(self, state: TutorState) -> dict:
         lang = state.get("language", "python")
-        return {"features": analyze(state.get("code") if lang == "python" else None)}
+        if not state.get("code"):
+            return {"features": analyze(None)}
+        writer = get_stream_writer()
+        emit_step(writer, "analyze_code", "running")
+        features = analyze(state.get("code") if lang == "python" else None)
+        emit_step(writer, "analyze_code", "done")
+        return {"features": features}
 
     async def _semantic_lookup(self, message: str) -> CachedAnswer | None:
         if not (self.d.semantic and self.d.semantic.enabled and self.d.embeddings):
@@ -162,6 +170,7 @@ class TutorNodes:
             can_show_answer=progress.hints_given >= 1,
             reasons=["answer cache hit"],
         )
+        emit_step(writer, "check_cache", "done")
         writer(self._meta(decision, progress.stage.value, cached=True))
         writer({"type": "token", "text": state["cached_reply"]})
         return {"decision": decision, "reply": state["cached_reply"]}
@@ -170,7 +179,10 @@ class TutorNodes:
 
     async def classify(self, state: TutorState) -> dict:
         progress = state["progress"]
+        writer = get_stream_writer()
+        emit_step(writer, "classify", "running")
         cls = await self.d.classifier.classify(state["message"], state.get("code"), progress)
+        emit_step(writer, "classify", "done")
         if cls.intent is Intent.PROBLEM_START:  # new problem: restart the ladder
             progress.hints_given = 0
             progress.started_at = 0.0
@@ -183,11 +195,22 @@ class TutorNodes:
         return " ".join([text, *concepts])
 
     async def retrieve(self, state: TutorState) -> dict:
+        writer = get_stream_writer()
+        emit_step(writer, "retrieve", "running")
         try:
             result = await self.d.retriever.retrieve(self._query(state["message"], state))
         except Exception:
             log.warning("retrieval failed", exc_info=True)
             result = RetrievalResult([], grounded=False)
+        n = len(result.chunks)
+        title = short_title(result.chunks[0].source) if n else ""
+        emit_step(
+            writer,
+            "retrieve",
+            "done",
+            f"{n} passage{'' if n == 1 else 's'}",
+            label=f"Searching {title}" if title else None,
+        )
         return {"retrieval": result}
 
     async def recall_memory(self, state: TutorState) -> dict:
@@ -195,6 +218,8 @@ class TutorNodes:
         if not (self.d.memory and learner_id):
             return {"memories": []}
         s = self.d.settings
+        writer = get_stream_writer()
+        emit_step(writer, "recall_memory", "running")
         try:
             items = await asyncio.wait_for(
                 self.d.memory.recall(learner_id, state["message"], s.memory_recall_limit),
@@ -203,8 +228,10 @@ class TutorNodes:
         except Exception:
             log.warning("memory recall failed", exc_info=True)
             await self.d.metrics.incr("memory_failures")
+            emit_step(writer, "recall_memory", "done")
             return {"memories": []}
         await self.d.metrics.incr("memory_recalls")
+        emit_step(writer, "recall_memory", "done")
         return {"memories": items}
 
     async def refine_retrieval(self, state: TutorState) -> dict:
@@ -228,6 +255,8 @@ class TutorNodes:
     async def policy(self, state: TutorState) -> dict:
         s = self.d.settings
         progress = state["progress"]
+        writer = get_stream_writer()
+        emit_step(writer, "policy", "running")
         decision = decide_mode(
             state["classification"].intent,
             progress,
@@ -236,7 +265,18 @@ class TutorNodes:
             max_turns=s.ladder_max_turns,
             max_seconds=s.ladder_max_seconds,
         )
+        emit_step(writer, "policy", "done", self._decision_detail(decision))
         return {"decision": decision, "tool_plan": self._plan_tools(state, decision)}
+
+    @staticmethod
+    def _decision_detail(decision: Decision) -> str:
+        if decision.mode is Mode.HINT and decision.level is not None:
+            return f"Hint {int(decision.level) + 1}"
+        return {
+            Mode.EXPLAIN: "Explanation",
+            Mode.REVEAL: "Full answer",
+            Mode.REDIRECT: "Staying on programming",
+        }.get(decision.mode, "")
 
     # -- tools and human approval ----------------------------------------------------
 
@@ -288,6 +328,9 @@ class TutorNodes:
 
     async def run_tools(self, state: TutorState) -> dict:
         update: dict = {}
+        writer = get_stream_writer()
+        emit_step(writer, "run_tools", "running")
+        ran = False
         timeout = self.d.settings.sandbox_timeout_s + 5
         for name in state.get("tool_plan") or []:
             if decide_permission(name, state["progress"].run_permission) != "run":
@@ -299,11 +342,13 @@ class TutorNodes:
             except Exception:
                 log.warning("tool %s failed", name, exc_info=True)
                 continue
+            ran = True
             await self.d.metrics.incr("tool_runs")
             if name == "trace_python":
                 update["runtime"] = result
             elif name == "suggest_cases":
                 update["cases"] = result.get("cases", [])
+        emit_step(writer, "run_tools", "done", "finished" if ran else "stopped")
         return update
 
     # -- generation ------------------------------------------------------------------
@@ -335,6 +380,7 @@ class TutorNodes:
         retrieval: RetrievalResult = state["retrieval"]
         progress = state["progress"]
         features = state.get("features")
+        emit_step(writer, "generate", "running")
         writer(self._meta(decision, cls.stage.value))
 
         context = [(i + 1, c.text[:1200]) for i, c in enumerate(retrieval.chunks)]

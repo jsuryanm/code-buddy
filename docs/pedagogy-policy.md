@@ -27,6 +27,12 @@ Hint ladder:
 | 3 | `SCAFFOLD` | Pseudo-code plan or a worked example on a different problem | No (pseudo-code fences allowed) |
 | 4 | `REVEAL` | Full solution, why it failed (max 120 words), transfer question | Yes |
 
+At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private analysis
+and runtime facts are only for choosing the question. The model must never state the error type, its
+cause, or the failing input; it asks the learner to run or trace a specific small input and say what
+they observe. The guard cannot catch this in prose, so it is a prompt rule, and `PROMPT_VERSION`
+was bumped to `p2` with it.
+
 ## When the answer is offered
 
 `offer_answer` becomes true when any of these holds, and `can_show_answer` is then true too:

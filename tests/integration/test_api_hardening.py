@@ -90,7 +90,7 @@ async def test_approval_flow_over_http(build):
             "/v1/turn", json={"session_id": "s", "message": "it crashes", "code": BUGGY}
         )
         events = parse(first.text)
-        kinds = [k for k, _ in events]
+        kinds = [k for k, _ in events if k != "step"]
         assert kinds == ["meta", "approval", "done"] or kinds == ["approval", "done"]
         approval = next(d for k, d in events if k == "approval")
         done = events[-1][1]

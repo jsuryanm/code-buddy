@@ -191,6 +191,8 @@ def create_app(
                 if kind == "meta":
                     level = event.get("level") if event.get("mode") == Mode.HINT.value else None
                     yield sse("meta", event)
+                elif kind == "step":
+                    yield sse("step", {k: event[k] for k in ("key", "label", "status", "detail")})
                 elif kind == "token":
                     if first_token_ms is None:
                         first_token_ms = (time.perf_counter() - started) * 1000

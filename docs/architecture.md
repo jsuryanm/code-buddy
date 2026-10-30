@@ -117,6 +117,7 @@ one `final` event with the end state:
 | Event | Payload | Emitted by |
 |---|---|---|
 | `meta` | mode, hint level, stage, `can_show_answer`, `offer_answer`, `cached` | `generate`, `emit_cached` (before the first token) |
+| `step` | `key`, `label`, `status` (`running`, `done`), `detail`; fixed learner-safe text from `agent/steps.py` | `analyze_code`, `check_cache`, `classify`, `retrieve`, `recall_memory`, `policy`, `run_tools`, `generate` |
 | `token` | `text` already approved by the leak guard | `generate`, `emit_cached` |
 | `final` | the complete graph state (not sent to clients as-is) | `run_turn` |
 

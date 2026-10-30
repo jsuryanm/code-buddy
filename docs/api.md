@@ -92,6 +92,7 @@ Content type `text/event-stream`. Each event has an `event:` name and one JSON `
 | Event | When | Data |
 |---|---|---|
 | `meta` | Once, before the first token | `mode` (`hint`, `explain`, `reveal`, `redirect`), `level` (0 to 4 or null), `stage` (P, C, D, I, T), `can_show_answer`, `offer_answer`, `cached` |
+| `step` | Many, before the first token (parallel steps can interleave) | `key`, `label`, `status` (`running` or `done`), `detail` (or null). Progress text for the learner; never contains bug names, errors, findings, or code |
 | `token` | Many | `{"text": "..."}` text already approved by the leak guard |
 | `approval` | When the tutor needs permission to run the learner's code (no tokens come before it) | `turn_id`, `tool`, `message`, `code` (preview) |
 | `done` | Once, last | `turn_id`, `awaiting_approval`, `citations[]`, `degraded`, `guarded`, `cache_hit`, `stage`, `hints_given`, `ttft_ms`, `total_ms` |

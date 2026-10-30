@@ -33,7 +33,7 @@ async def test_turn_streams_meta_tokens_and_done(client_for):
         r = await client.post("/v1/turn", json={"session_id": "a", "message": "why", "code": BUGGY})
     assert r.headers["content-type"].startswith("text/event-stream")
     events = parse(r.text)
-    kinds = [k for k, _ in events]
+    kinds = [k for k, _ in events if k != "step"]
     assert kinds[0] == "meta" and kinds[-1] == "done" and "token" in kinds
     assert "".join(d["text"] for k, d in events if k == "token").startswith("What is i")
     done = events[-1][1]
@@ -47,7 +47,7 @@ async def test_show_answer_endpoint_reveals(client_for):
     async with client:
         await client.post("/v1/turn", json={"session_id": "b", "message": "why", "code": BUGGY})
         r = await client.post("/v1/show-answer", json={"session_id": "b", "code": BUGGY})
-        meta = parse(r.text)[0][1]
+        meta = next(d for k, d in parse(r.text) if k == "meta")
         status = (await client.get("/v1/session/b")).json()
     assert meta["mode"] == "reveal" and "```python" in r.text
     assert status["hints_given"] == 0 and status["reveals"] == 1
