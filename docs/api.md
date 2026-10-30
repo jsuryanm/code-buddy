@@ -63,7 +63,8 @@ curl -X DELETE -H "X-Learner-Token: <token>" localhost:8000/v1/memory   # forget
 ```
 
 The token goes in a header, not the path, so it stays out of access logs. A missing or malformed
-`X-Learner-Token` returns 422.
+`X-Learner-Token` returns 422. `DELETE /v1/memory` returns 503 (`Could not forget right now;
+please try again`) when the cache cannot record the forget marker; nothing is deleted then.
 
 All three need the API key when keys are on, and the token is bound to the key that minted it.
 The three routes return 503 when `CODEBUDDY_MEMORY_ENABLED` is off or the store failed to start,

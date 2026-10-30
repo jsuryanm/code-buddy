@@ -47,9 +47,11 @@ store is not safe for concurrent use. A recall that waits behind a slow write ca
 `CODEBUDDY_MEMORY_RECALL_TIMEOUT_S`; that turn then proceeds with no memory and counts a
 `memory_failures`. The lock also orders writes against Forget me: a write that started before
 Forget finishes before the delete, and a write scheduled before Forget that has not yet run is
-dropped (each write carries the learner's forget generation from when it was scheduled). Forget
-also records its time in the cache (`cb:forgot:<learner id>`, kept 30 days), and each session turn
-carries a timestamp, so a later write in the same session never re-adds turns from before Forget.
+dropped (each write carries the learner's forget generation from when it was scheduled). Before
+deleting, Forget records its time in the cache (`cb:forgot:<learner id>`, kept 30 days), and each
+session turn carries a timestamp, so a later write in the same session never re-adds turns from
+before Forget. If that marker cannot be written, Forget returns 503 and deletes nothing; if it
+cannot be read, the write is skipped and counted as `memory_failures`.
 On shutdown the API waits up to 5 seconds for pending writes, then cancels them.
 
 Cost: every write calls OpenAI. A hint write is one extraction call on the fast model plus

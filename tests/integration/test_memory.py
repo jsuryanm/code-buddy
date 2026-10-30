@@ -387,3 +387,54 @@ async def test_a_write_after_forget_holds_only_later_turns(make_harness):
     texts = [i.text for i in await memory.all(a.split(".")[0])]
     assert "after forget my loop is wrong" in texts
     assert not any("before forget" in t for t in texts)
+
+
+def failing_on_forgot(cache, method: str) -> None:
+    """Make one cache method raise for forgot markers only (sessions and rate limits still work)."""
+    original = getattr(cache, method)
+
+    async def call(key, *args, **kwargs):
+        if key.startswith("cb:forgot:"):
+            raise ConnectionError("cache down")
+        return await original(key, *args, **kwargs)
+
+    setattr(cache, method, call)
+
+
+async def test_forget_marker_is_written_before_the_delete(make_harness):
+    class MarkerFirst(InMemoryLearnerMemory):
+        async def forget(self, learner_id):
+            assert await h.deps.cache.get(f"cb:forgot:{learner_id}") is not None
+            return await super().forget(learner_id)
+
+    h = make_harness(memory=MarkerFirst())
+    async with client_for(h) as client:
+        a = await new_token(client)
+        assert (await client.delete("/v1/memory", headers=tok(a))).status_code == 200
+
+
+async def test_forget_fails_closed_when_the_marker_cannot_be_written(make_harness):
+    memory = await seeded()
+    h = make_harness(memory=memory)
+    failing_on_forgot(h.deps.cache, "set")
+    async with client_for(h) as client:
+        a = await new_token(client)
+        learner = a.split(".")[0]
+        memory._items[learner] = [MemoryItem(MemoryKind.SEMANTIC, "keep me")]
+        r = await client.delete("/v1/memory", headers=tok(a))
+        assert r.status_code == 503
+        assert r.json()["detail"] == "Could not forget right now; please try again"
+    assert [i.text for i in await memory.all(learner)] == ["keep me"]
+
+
+async def test_write_is_skipped_when_the_marker_cannot_be_read(make_harness, caplog):
+    memory = InMemoryLearnerMemory()
+    h = make_harness(memory=memory)
+    h.deps.settings = h.deps.settings.model_copy(update={"memory_write_every": 1})
+    failing_on_forgot(h.deps.cache, "get")
+    out = await h.turn("why is my loop wrong", code=BUGGY, learner_id=LEARNER)
+    await drain(h)
+    assert out["text"]
+    assert await memory.all(LEARNER) == []
+    assert (await h.deps.metrics.snapshot())["memory_failures"] == 1
+    assert LEARNER not in caplog.text

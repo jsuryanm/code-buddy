@@ -422,7 +422,16 @@ class TutorNodes:
         )
         since = self.d.memory.generation(learner_id)  # a Forget from now on drops this write
         history = progress.history
-        if forgot := await self.d.cache.get(keys.forgot_key(learner_id)):
+        try:
+            forgot = await self.d.cache.get(keys.forgot_key(learner_id))
+        except Exception as exc:  # fail closed: without the marker, older turns might be re-written
+            # No traceback: a cache error can quote the key, which holds the learner id.
+            log.warning(
+                "could not read forget marker (%s); skipping memory write", type(exc).__name__
+            )
+            await self.d.metrics.incr("memory_failures")
+            return
+        if forgot:
             # Turns from before Forget me stay in the session; never write them again.
             history = [h for h in history if float(h.get("at", 0)) > float(forgot)]
         self.d.spawn(self._write_memory(learner_id, history, episode, since))

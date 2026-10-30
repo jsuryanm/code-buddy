@@ -347,10 +347,13 @@ def create_app(
     async def memory_forget(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
         memory = memory_store()
         learner_id = verified_learner(learner_token, key)
-        deleted = await memory.forget(learner_id)
-        d = current()  # session turns from before now are never written again
-        await d.cache.set(keys.forgot_key(learner_id), str(d.clock()), keys.FORGOT_TTL)
-        return {"deleted": deleted}
+        d = current()
+        try:  # first, so no write scheduled from here on can carry turns from before Forget
+            await d.cache.set(keys.forgot_key(learner_id), str(d.clock()), keys.FORGOT_TTL)
+        except Exception as exc:
+            log.warning("could not record forget marker (%s)", type(exc).__name__)
+            raise HTTPException(503, "Could not forget right now; please try again") from exc
+        return {"deleted": await memory.forget(learner_id)}
 
     return app
 
