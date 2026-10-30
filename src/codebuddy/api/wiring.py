@@ -43,6 +43,18 @@ def build_cache() -> tuple[Cache, str]:
     return InMemoryCache(), "memory"
 
 
+async def build_memory(settings: Settings) -> Mem0LearnerMemory | None:
+    if not settings.memory_enabled:
+        return None
+    memory = Mem0LearnerMemory(settings)
+    try:
+        await memory.warm()  # open the stores now, not during a learner's first turn
+    except Exception:
+        log.exception("Learner memory failed to start; continuing without it")
+        return None
+    return memory
+
+
 @dataclass
 class Resources:
     deps: Deps
@@ -81,15 +93,6 @@ async def build_resources(settings: Settings) -> Resources:
         conn = await stack.enter_async_context(aiosqlite.connect(settings.checkpoint_path))
         saver = AsyncSqliteSaver(conn, serde=checkpoint_serde())
 
-        memory = None
-        if settings.memory_enabled:
-            memory = Mem0LearnerMemory(settings)
-            try:
-                await memory.warm()  # open the stores now, not during a learner's first turn
-            except Exception:
-                log.exception("Learner memory failed to start; continuing without it")
-                memory = None
-
         namespace = f"{settings.index_version}:{settings.prompt_version}:{settings.model_standard}"
         deps = Deps(
             settings=settings,
@@ -109,7 +112,7 @@ async def build_resources(settings: Settings) -> Resources:
                 ttl=settings.ttl_answer,
             ),
             cache=cache,
-            memory=memory,
+            memory=await build_memory(settings),
         )
         judge = LeakJudge.from_model(tiers.fast_base) if settings.judge_sample_rate > 0 else None
         return Resources(deps, cache_kind, build_speech_to_text(settings), judge, saver, stack)
