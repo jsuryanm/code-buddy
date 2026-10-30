@@ -14,6 +14,7 @@ Socratic hints instead of handing out answers, and always lets them reach the fu
 | [rag-and-ingestion.md](rag-and-ingestion.md) | Add documents, understand chunking, metadata, and corpora |
 | [ui.md](ui.md) | Use and extend the Streamlit front end, including voice and approvals |
 | [tools-and-approvals.md](tools-and-approvals.md) | Understand the MCP tools, the code sandbox, and the permission prompt |
+| [memory.md](memory.md) | Learn what long-term learner memory stores, its opt-in and privacy limits, and how to enable it |
 | [security.md](security.md) | Know what is protected, what is not, and what to do before going public |
 | [deployment.md](deployment.md) | Containerize and run it (Dockerfile, compose, CI; untested) |
 | [testing.md](testing.md) | Run tests and the offline eval, and write new tests |
@@ -25,7 +26,7 @@ target design. These docs describe what is built today (slice 1) and say where t
 
 ## Status
 
-Built and tested offline (155 tests, offline eval passing):
+Built and tested offline (205 tests, offline eval passing):
 
 - Pedagogy policy, hint ladder, streaming leak guard, optional sampled LLM judge
 - Static analysis of learner Python (five bug patterns)
@@ -34,16 +35,21 @@ Built and tested offline (155 tests, offline eval passing):
 - LangGraph tutor agent with durable checkpoints, FastAPI streaming API, Streamlit UI
 - Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, microphone widget with an editable transcript
 - MCP tool server (analysis, concrete-case suggestions, sandboxed tracing) and a learner approval step before any code runs
+- Opt-in long-term learner memory on mem0 (semantic, episodic, procedural notes), signed learner tokens, "Forget me" ([memory.md](memory.md))
+- A `SandboxBackend` seam for code execution (only the local backend is included)
 - API keys, rate limiting, CORS, counters at `/v1/metrics`
 - Dockerfile, compose file, and CI workflow (written, not run)
 - Offline evals
 
-Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts,
-Langfuse tracing, a hard sandbox boundary (needs a container), LLM-written synthetic questions
-for ingestion, deployment automation.
+Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
+(memory uses bearer-like learner tokens instead), Langfuse tracing, a hard sandbox boundary (needs
+a container or a remote sandbox adapter), LLM-written synthetic questions for ingestion,
+deployment automation, solved detection and concept mastery for the learner model.
 
-Not yet exercised against real services (no API keys were available during development):
-OpenAI chat and embeddings, Groq Whisper, Upstash Redis, PDF parsing with Docling, the
-cross-encoder reranker, the Qdrant server mode, and the Docker files. The code follows each
+Run once for real: PDF ingestion with Docling and OpenAI embeddings, on the two PDFs in the
+corpus manifest.
+
+Not yet exercised against real services: OpenAI chat replies, mem0 memory extraction, Groq
+Whisper, Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files. The code follows each
 library's documentation and is covered by fakes and, for MCP and the sandbox, by real
 subprocesses, but treat the first live run as a test.

@@ -6,8 +6,8 @@ Code: `src/codebuddy/rag/`. Design rationale: [../PROJECT_SPEC.md](../PROJECT_SP
 
 | Corpus | Collection | Who may read it | Typical content |
 |---|---|---|---|
-| `fundamentals` | `cb_fundamentals_<index_version>` | Learner turns (cited to the learner) | Think Python, Python docs |
-| `pedagogy` | `cb_pedagogy_<index_version>` | Only code that builds a `Retriever` with `allowed={"pedagogy"}`. The production API does not, and no node uses it yet | PCDIT paper and page |
+| `fundamentals` | `cb_fundamentals_<index_version>` | Learner turns (cited to the learner) | Think Python (338 chunks ingested), Python docs |
+| `pedagogy` | `cb_pedagogy_<index_version>` | Only code that builds a `Retriever` with `allowed={"pedagogy"}`. The production API does not, and no node uses it yet | PCDIT paper (29 chunks ingested) and page |
 | any other name, e.g. `tenant_42` | `cb_tenant_42_<index_version>` | Not wired into the API yet | Instructor uploads |
 
 Separation is by collection, not by prompt. `Retriever.retrieve()` raises `PermissionError` for a
@@ -37,7 +37,12 @@ Supported files: `.md`, `.markdown`, `.txt`, `.html`, `.htm`, `.pdf`.
 |---|---|
 | Markdown, text | Read as Markdown |
 | HTML | Small built-in converter: headings, paragraphs, lists, and `<pre>` blocks to Markdown. Scripts and styles skipped. Not a general-purpose scraper |
-| PDF | Docling converts to Markdown (needs `uv sync --extra pdf`). Not yet run against real files; inspect the output of your first PDF before trusting it |
+| PDF | Docling converts to Markdown (needs `uv sync --extra pdf`). `tidy_docling_markdown` then indents any line that starts with a single `#`: Docling writes every real heading as `##`, so a single `#` is a comment from a code listing and must not become a heading. Run on the two real PDFs; inspect the output of any new PDF before trusting it |
+
+The CLI loads `.env` into the process environment, so `OPENAI_API_KEY` there is found. A `PATH` that
+does not exist is an error. Docling can segfault on WSL while probing for a GPU; run ingestion with
+`CUDA_VISIBLE_DEVICES=` set to empty (see [setup.md](setup.md)). The 240-page book took several
+minutes on CPU.
 
 Embedding uses `OpenAIEmbeddings` (needs `OPENAI_API_KEY`) plus BM25 sparse vectors from
 `fastembed`. Embedded Qdrant allows one process at a time, so stop the API during ingestion.

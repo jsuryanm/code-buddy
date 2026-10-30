@@ -109,6 +109,10 @@ session open for the life of the app through `langchain.mcp` (`MCPAdapter`), and
 server fails to start the API logs a warning and falls back to in-process calls.
 `tests/unit/test_tools.py` starts a real MCP server and calls two tools through it.
 
+`langchain.mcp` is a beta API. `pyproject.toml` bounds it (`langchain[mcp]>=1.4,<1.5`, `mcp>=2.3,<3`) and
+the runner silences its beta warning. The server is `mcp.server.mcpserver.MCPServer` (mcp 2.x moved it
+from `mcp.server.fastmcp`).
+
 To add a tool: write the function in `tools/functions.py` and add it to `TOOLS`; register it in
 `mcp_server/server.py`; give it a risk in `tools/policy.TOOL_RISK`; decide in `_plan_tools()` when
 it runs; add tests. Any tool that executes or writes must be gated, not just `READ`.

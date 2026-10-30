@@ -2,7 +2,9 @@
 
 Settings load from environment variables and `.env` (`src/codebuddy/config.py`, pydantic-settings).
 Variables with the `CODEBUDDY_` prefix map to the fields below, case-insensitive. A few
-third-party variables are read directly by their libraries.
+third-party variables are read directly by their libraries. The ingest CLI and the API start-up
+also load `.env` into the process environment (`load_dotenv`), so those libraries find
+`OPENAI_API_KEY`, `GROQ_API_KEY`, and the Upstash variables there too.
 
 ## Third-party variables (no prefix)
 
@@ -13,6 +15,7 @@ third-party variables are read directly by their libraries.
 | `UPSTASH_REDIS_REST_TOKEN` | `upstash-redis` | |
 | `GROQ_API_KEY` | `groq` SDK | Enables voice input. Without it `/v1/stt` returns 503 and the UI hides the microphone |
 | `CODEBUDDY_API_KEY` | Streamlit UI | Key sent to the API when the server requires one (sidebar field overrides) |
+| `MEM0_TELEMETRY` | `mem0` | Set to `False` by our code before mem0 is imported (`setdefault`), so mem0 sends no usage data. Set it yourself to `True` only if you want that |
 | `CODEBUDDY_API_URL` | Streamlit UI | Default `http://localhost:8000` (prefix kept for consistency; read by the UI, not by `Settings`) |
 
 ## Settings (`CODEBUDDY_<NAME>`)
@@ -74,6 +77,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `MCP_ENABLED` | `true` | Call tools through the MCP stdio server; `false` calls them in-process |
 | `SANDBOX_TIMEOUT_S` | `3.0` | Wall-clock limit for a run |
 | `SANDBOX_MEMORY_MB` | `256` | Address-space limit for a run |
+| `SANDBOX_BACKEND` | `local` | Which `SandboxBackend` runs traces. Only `local` is included; an unknown name raises `ValueError`. See [tools-and-approvals.md](tools-and-approvals.md#stronger-isolation) |
 | `CHECKPOINT_PATH` | `data/checkpoints.sqlite` | SQLite file holding paused turns (grows; prune when needed) |
 
 ### API protection
@@ -91,6 +95,18 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `SEMANTIC_CACHE_THRESHOLD` | `0.0` | Cosine similarity needed for an L2 hit on concept questions. `0` is off. Tune on real questions first: "for loop" and "while loop" questions are close in embedding space, so a threshold that is too low serves the wrong answer. Costs one embedding call per uncached concept question |
 | `SEMANTIC_CACHE_MAX` | `500` | Entries kept in the semantic index |
 | `JUDGE_SAMPLE_RATE` | `0.0` | Share of hint replies re-checked by the fast model for leaks the rule guard cannot see. Runs after the reply is sent; results appear in `/v1/metrics` and the log |
+
+### Learner memory (off by default)
+
+| Name | Default | Meaning |
+|---|---|---|
+| `MEMORY_ENABLED` | `false` | Turn on opt-in long-term learner memory. Needs `OPENAI_API_KEY` and `MODEL_FAST`. See [memory.md](memory.md) |
+| `MEMORY_PATH` | `data/memory` | Embedded Qdrant data and `history.db`. Single process only |
+| `MEMORY_SECRET` | empty | Signs learner tokens. Empty: a random secret per process with a startup warning, so tokens stop working after a restart. Changing it invalidates every token |
+| `MEMORY_RECALL_LIMIT` | `5` | Notes put into a prompt |
+| `MEMORY_RECALL_TIMEOUT_S` | `0.6` | Recall is abandoned after this, and the turn goes on without notes |
+| `MEMORY_WRITE_EVERY` | `4` | Write on every Nth hint (minimum 1); a reveal always writes |
+| `MEMORY_EMBEDDING_DIMS` | `1536` | Vector size in the memory store. Must match `EMBED_MODEL`; changing it needs a new `MEMORY_PATH` |
 
 ### Cache TTLs (seconds)
 
@@ -111,7 +127,10 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `api/wiring.py` | Upstash variables, Qdrant, reranker choice, all TTLs |
 | `agent/nodes.py` | Ladder caps, versions, `model_standard` (cache key), sandbox timeout |
 | `api/app.py`, `api/security.py` | API keys, rate limit, CORS, STT limits, judge rate |
-| `tools/functions.py` | Sandbox timeout and memory |
+| `tools/functions.py` | Sandbox timeout, memory, and backend |
+| `memory/mem0_store.py` | `MODEL_FAST`, `EMBED_MODEL`, and the `MEMORY_*` path and size settings |
+| `agent/nodes.py` (memory) | `MEMORY_RECALL_LIMIT`, `MEMORY_RECALL_TIMEOUT_S`, `MEMORY_WRITE_EVERY` |
+| `api/app.py` (memory) | `MEMORY_SECRET` |
 | `rag/ingest.py` and `rag/store.py` | Qdrant location, index version |
 
 ## Hard-coded values worth knowing

@@ -24,5 +24,6 @@ Source: PROJECT_SPEC.md Section 10. Target: p95 time-to-first-token under 1 s, c
 - Cache knowledge (explanations, retrieval, bug patterns, tool output). Generate the personalized Socratic question fresh.
 - Never cache Level 4 reveals across different learner code.
 - Invalidate on index, prompt, or model version change by including all three in the key.
+- Skip L1 and L2 for a learner with memory active, and never store a reply whose prompt included session history (the key ignores history).
 - Use a single-flight lock (`SET NX`) so concurrent identical misses trigger one generation.
 - Track hit rate per layer and the semantic-cache false-positive rate.

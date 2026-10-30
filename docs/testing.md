@@ -28,7 +28,11 @@ uv run python -m codebuddy.eval.run --json
 | `tests/unit/test_rag.py` | Chunking, ingestion idempotence, hybrid retrieval, corpus access, filters |
 | `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request |
 | `tests/unit/test_sandbox.py` | Real subprocess runs: traces, errors with line numbers, infinite loops, recursion, output cap, thirteen refused code patterns |
-| `tests/unit/test_tools.py` | Tool functions, permission rules, and a **real MCP stdio server** called through the adapters |
+| `tests/unit/test_tools.py` | Tool functions, permission rules, and a **real MCP stdio server** called through `langchain.mcp` |
+| `tests/unit/test_sandbox_backend.py` | The `SandboxBackend` seam: default `local` backend and its result keys, unknown names, `trace_python` uses the configured backend, allowlist runs before it |
+| `tests/unit/test_memory.py` | Memory kinds in the fake and in `Mem0LearnerMemory` (against a recording stub), exact mem0 call arguments, recall shapes, forget count, and `build_config` accepted by mem0's `MemoryConfig` |
+| `tests/unit/test_learner_tokens.py` | Token issue and verify: round trip, tampering, binding to the minting API key, and `MEMORY_WRITE_EVERY` must be at least 1 |
+| `tests/unit/test_wiring_memory.py` | `build_memory`: builds nothing when disabled, returns a warmed mem0 store, and logs and continues without memory when warm-up fails |
 | `tests/unit/test_judge.py` | Sampled leak judge: counting, rate, never judging reveals, failures ignored |
 | `tests/integration/test_graph.py` | Full graph: ladder, guard, reveal, outage, caching, history, citations |
 | `tests/integration/test_api.py` | HTTP endpoints and SSE framing |
@@ -37,6 +41,8 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; query rewriting for short follow-ups only |
 | `tests/integration/test_ui_smoke.py` | Streamlit page with a stub client |
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
+| `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409 and the graph backstop), list and forget endpoints |
+| `tests/integration/test_ui_memory.py` | Opt-in box, token minting, **Use this profile** for links, Forget me, mint failures |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 
 ## Fakes (no real models)
@@ -50,6 +56,8 @@ uv run python -m codebuddy.eval.run --json
 | `InMemoryCache` | `cache/memory.py` | Upstash Redis (accepts an injected clock for TTL tests) |
 | `HeuristicClassifier` | `agent/deps.py` | The LLM classifier |
 | `LocalToolRunner` | `tools/runner.py` | The MCP session (the sandbox itself is real) |
+| `InMemoryLearnerMemory` | `memory/store.py` | mem0 and its OpenAI calls. Ranks by word overlap, isolates learners |
+| Recording stub for `mem0.Memory` | `tests/unit/test_memory.py` | The mem0 client, to check the exact calls our store makes |
 | Fake transcribers | `tests/integration/test_api_hardening.py` | Groq and OpenAI speech |
 | `Stub` client | `tests/integration/test_ui_voice_approval.py` | The HTTP API, for UI tests |
 
@@ -96,10 +104,12 @@ questions. For that, run real conversations and have an instructor score them (s
 
 ## Not tested
 
-- Live OpenAI, Groq, Upstash, and Qdrant-server behavior (needs your credentials)
+- Live OpenAI, Groq, Upstash, and Qdrant-server behavior (needs your credentials). This includes
+  real mem0 extraction: the offline tests check the calls we make, not what mem0 stores
 - The Docker files and CI workflow
 - The sandbox against a determined attacker (see [security.md](security.md))
-- PDF ingestion with Docling and the cross-encoder reranker (optional extras)
+- The cross-encoder reranker (optional extra). Docling PDF ingestion was run by hand on the two
+  real PDFs; the tests cover only the markdown clean-up (`tidy_docling_markdown`)
 - The Streamlit page in a real browser, and recording audio from a real microphone
 - Load and latency under concurrency
 

@@ -33,6 +33,9 @@ indexes) that the embedded mode cannot exercise, so test it.
 - Run one API replica per embedded Qdrant folder, or use the Qdrant server and scale replicas.
 - Pin the Qdrant server image to the version you tested, matching the `qdrant-client` major/minor.
 - Persist `/app/data` (checkpoints, manifest). Back up the Qdrant volume or re-ingest from source.
+- If learner memory is on, `/app/data/memory` holds personal data and must persist and be backed up
+  (or learners lose their notes). Set `CODEBUDDY_MEMORY_SECRET` from a secret store, or tokens die on
+  restart. Memory uses embedded Qdrant, so run one API worker.
 - Run the sandbox without network access (see [security.md](security.md)). In a default Docker
   container `unshare -rn` usually fails, so `/healthz` will report `sandbox_network_isolated: false`.
 - Watch `/v1/metrics`: `degraded` and `rate_limited` rising, `guard_stops` and `judge_flagged`

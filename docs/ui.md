@@ -24,6 +24,7 @@ Set `CODEBUDDY_API_URL` to point at another API host; the sidebar field override
 | Chat | History plus the streaming reply. Under each tutor reply: a caption such as "Hint 2: look here", "Explanation", or "instant (cached)", then numbered citations |
 | Voice | A microphone widget (shown only when the server reports `stt_configured`). A recording is sent to `/v1/stt`; the transcript appears in an editable box with a **Send transcript** button, so the learner reads and fixes it first |
 | Permission prompt | When the tutor wants to run the learner's code it shows the code, a **Run my code** / **Don't run it** pair, and a "remember for this session" checkbox. Nothing is said or run until the learner chooses |
+| Memory (only when `/healthz` reports `memory_enabled`) | Box **Remember me across sessions**, unchecked on every fresh page. Ticking it mints a learner token and puts it in the URL as `?learner=`. A page opened with `?learner=` shows "This link contains a saved learner profile. Use it only if you created it." and a **Use this profile** button; only that click enables memory. While on: an expander **What I remember about you** lists items by kind, and **Forget me** deletes them all and turns memory off. Turns carry the token as `learner_id` |
 | Warnings | A warning when the reply came from course material only (model outage); an error with a retry hint if the API cannot be reached |
 
 ## How it maps to the API
@@ -44,7 +45,7 @@ sequenceDiagram
 button and stage bar are drawn before the reply is known).
 
 Session state keys: `session_id`, `messages` (role, content, meta, done), `stage`, `can_show`,
-`offer`, `pending` (a turn waiting for permission), `transcript` / `transcript_edit` / `last_audio`
+`offer`, `pending` (a turn waiting for permission), `learner_id` (the token while memory is on), `memory_note` (result text for Forget or a failed mint), `transcript` / `transcript_edit` / `last_audio`
 (voice), plus the widget keys `code`, `show_answer`, `approve_run`, `decline_run`, `remember`, and
 `send_transcript`.
 
@@ -57,6 +58,7 @@ Session state keys: `session_id`, `messages` (role, content, meta, done), `stage
 
 `tests/integration/test_ui_voice_approval.py` covers the permission prompt and transcript editing
 (the recording itself cannot be simulated; test the microphone by hand).
+`tests/integration/test_ui_memory.py` covers the opt-in box, **Use this profile**, and Forget me.
 `tests/integration/test_ui_smoke.py` runs the real script with Streamlit's `AppTest` and a stub
 client injected through `st.session_state["client"]`. `tests/unit/test_ui_client.py` covers SSE
 parsing and error handling with `httpx.MockTransport`. No server is needed. See

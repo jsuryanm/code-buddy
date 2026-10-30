@@ -4,10 +4,11 @@
 
 | | |
 |---|---|
-| Status | Draft v0.4 |
+| Status | Draft v0.5 |
+| Changes in v0.5 | Opt-in long-term learner memory built on mem0 with semantic, episodic, and procedural notes, signed learner tokens, and private-notes-only use (6.1, 8.6, 12.2; ADR 0008); a `SandboxBackend` seam (6.1; ADR 0007); the MCP client is `langchain.mcp`; the real corpus is Think Python v2.0.17 (CC BY-NC 3.0 Unported, stated in the PDF) and the PCDIT paper (19.5, 21). |
 | Changes in v0.4 | Slice 1 built; spec aligned with the code: rule-based streaming leak guard with a sampled LLM judge (6, 8.5), Streamlit UI for v1 (14.1, 15), tools over MCP with learner approval (12.3, 12.4), sandbox limits, API hardening, optional semantic cache, and a new implementation-status section (6.1). Code-level docs are in `docs/`. |
 | Changes in v0.3 | Package policy for `langchain-classic` vs `langchain-community` (Section 15.2); initial corpus (Think Python, PCDIT paper) split by access type (Sections 9.3, 19.5). Earlier: LLM gateway removed (OpenAI only); STT on Groq Whisper; LangChain integrations (Section 15.1) |
-| Date | 2026-10-29 |
+| Date | 2026-10-30 |
 | Audience | Product owner, engineers, evaluators |
 
 ---
@@ -156,7 +157,7 @@ CodeBuddy has four cooperating layers:
 3. **Knowledge layer.** RAG over a curated fundamentals corpus plus the PCDIT material, using hybrid retrieval and reranking.
 4. **Platform layer.** Upstash Redis caches, LangChain model layer (OpenAI and Groq Whisper), MCP tool servers, observability, evaluation, CI/CD.
 
-### 6.1 Implementation status (v0.4)
+### 6.1 Implementation status (v0.5)
 
 Slice 1 is built and tested offline; see `docs/README.md` for the full list and `docs/architecture.md` for the code map.
 
@@ -170,6 +171,8 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and 
 | Agent, MCP, tools, human in the loop (12) | Three tools over MCP, rule-planned, learner approval before code runs, durable checkpoints (SQLite instead of Postgres). Instructor surfaces not built |
 | Speech-to-text (13) | Groq Whisper with optional OpenAI fallback behind `/v1/stt`; Streamlit microphone widget with an editable transcript. Utterances are whole recordings, not voice-activity-detected chunks |
 | Evaluation (16) | Offline eval and CI gate built. Human review, A/B tests, and the learner pilot are not |
+| Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved detection, Postgres persistence, and accounts are not built. See `docs/memory.md` |
+| Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |
 | Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested). No Langfuse, accounts, or deployment automation |
 
 ### Key design principle
@@ -283,7 +286,9 @@ A blocking LLM judge was dropped from the reply path because it needs the whole 
 
 ### 8.6 Learner model
 
-Per-learner state (stored in Redis for the session, persisted to Postgres):
+> **Built in v0.5 through mem0.** Long-term memory is opt-in per learner and identified by a signed learner token, not an account. mem0 runs over embedded Qdrant. Kinds map as follows: *semantic* is facts mem0 extracts from recent turns; *episodic* is one line per reveal (stage, hints used, outcome), written by our code; *procedural* is mem0's procedural memory, summarizing how the learner worked through a problem, written after a reveal. Recall runs in parallel with classification and retrieval under a 0.6 s timeout; writes run in the background on a reveal and every fourth hint. Memory reaches the model only as delimited private notes. It never changes the hint level or mode, never bypasses the leak guard, and bypasses the answer caches. Not built: concept-mastery scores, pace and modality preferences, solved detection, Postgres persistence. See `docs/memory.md` and ADR 0008.
+
+Per-learner state (target design; stored in Redis for the session, persisted to Postgres):
 
 - Concept mastery estimates (simple Bayesian or Elo-like update per concept tag).
 - Error history (recurring error types).
@@ -536,7 +541,7 @@ Nodes (see diagram in [14.3](#143-tutor-agent-graph)):
 | **Failure handling** | Timeouts, retries, fallbacks, graceful degradation, idempotent tools. |
 | **Prompt versioning** | Prompts stored in version control / prompt registry with A/B support. |
 | **Cost and step budgets** | Max tokens, max steps, per-session spend caps. |
-| **Memory discipline** | Short-term conversation window + summarized long-term learner model; no unbounded context. |
+| **Memory discipline** | Short-term conversation window + summarized long-term learner model; no unbounded context. Built in v0.5: the six most recent messages plus at most five recalled notes of 200 characters each, opt-in, never read by the policy, never cached. |
 | **Prompt-injection defense** | Treat retrieved text, learner code, and tool outputs as untrusted data; never as instructions. |
 
 ### 12.3 MCP and tool calling (FR7)
@@ -1086,7 +1091,7 @@ Verify each license before ingestion and record it in the `license` metadata fie
 
 | Source | Type | Notes |
 |---|---|---|
-| **Think Python** (Allen Downey) | Book | Open license (check edition license); excellent for fundamentals and debugging chapters |
+| **Think Python** (Allen Downey) | Book | CC BY-NC 3.0 Unported, non-commercial; excellent for fundamentals and debugging chapters |
 | **Automate the Boring Stuff with Python** (Al Sweigart) | Book | CC license (non-commercial terms; verify fit) |
 | **Python official tutorial and docs** (docs.python.org) | Docs | PSF license; authoritative language reference |
 | **How to Think Like a Computer Scientist / Runestone Academy** | Interactive book | Open license; includes exercises |
@@ -1146,8 +1151,8 @@ Start with **one language (Python)** to keep the corpus tight; add a second only
 
 | # | Document | Format | Corpus | Licence (verify) | Use in CodeBuddy |
 |---|---|---|---|---|---|
-| 1 | *Think Python*, 2nd edition (Allen Downey) | Book, PDF or HTML from the author's site | `fundamentals` | Believed CC BY-NC-SA 3.0, which forbids commercial use. Verify on the edition's licence page | Main learner-facing source: variables, conditionals, loops, functions, strings, lists, dictionaries, debugging. Exercises seed the golden set |
-| 2 | Kurniawan et al., *Steps Before Syntax* (arXiv:2109.08896) | arXiv PDF | `pedagogy` | Check the licence field on the arXiv page | Stage definitions, question design, evaluation ideas. Tutor-only; never quoted to learners |
+| 1 | *Think Python: How to Think Like a Computer Scientist*, version 2.0.17 (2012, Allen Downey) | Book, PDF or HTML from the author's site | `fundamentals` | CC BY-NC 3.0 Unported (stated on page 4 of the PDF), which forbids commercial use. Ingested: 338 chunks | Main learner-facing source: variables, conditionals, loops, functions, strings, lists, dictionaries, debugging. Exercises seed the golden set |
+| 2 | Kurniawan et al., *Steps Before Syntax* (arXiv:2109.08896) | arXiv PDF | `pedagogy` | Licence not stated in the PDF; author permission still needed for learner-facing use. Ingested: 29 chunks | Stage definitions, question design, evaluation ideas. Tutor-only; never quoted to learners |
 | 3 | PCDIT framework page (okakurniawan.net/pcdit-framework) | Web page | `pedagogy` | Author's site; no licence stated. Ask permission before ingesting | Stage descriptions and worksheet structure. Reference only until permission is granted |
 | 4 | Python tutorial (docs.python.org) | HTML | `fundamentals` | PSF licence | Syntax reference and error-message explanations |
 | 5 | Instructor syllabus and materials (later) | PDF, DOCX | `tenant_<id>` | Uploader's responsibility; recorded on upload | Terminology alignment for that course |
@@ -1203,7 +1208,7 @@ Start with **one language (Python)** to keep the corpus tight; add a second only
 6. Is contacting Dr. Kurniawan's group for collaboration or permissions planned?
 7. Self-hosted vs. managed preference for the vector DB (Qdrant Cloud or self-hosted) and Redis? OpenAI and Groq are decided as managed APIs.
 8. Is single-provider risk acceptable? Degraded mode covers a short OpenAI outage. If not, add a second LLM provider behind the same LangChain interface (no gateway service).
-9. Is CodeBuddy commercial? Think Python's licence (believed CC BY-NC-SA) forbids commercial use. If commercial, we need permission from the author or a permissive replacement (e.g., Python docs plus instructor-authored material).
+9. Is CodeBuddy commercial? Think Python's licence (CC BY-NC 3.0 Unported, stated in the PDF) forbids commercial use. If commercial, we need permission from the author or a permissive replacement (e.g., Python docs plus instructor-authored material).
 10. May the PCDIT paper and framework page be used beyond internal design reference? Confirm with the authors (Section 7.1 note) before any learner-facing use.
 
 ---

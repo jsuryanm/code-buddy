@@ -25,6 +25,33 @@ can reach twice the limit.
   The leak judge sends the learner's code and the reply to OpenAI when sampling is on.
 - `/v1/metrics` exposes counters only.
 
+### Long-term memory (opt-in)
+
+Off unless `CODEBUDDY_MEMORY_ENABLED=true`, and then only for a learner who ticks the box. Details in
+[memory.md](memory.md). What to know:
+
+- Stored: short notes about what the learner struggles with, one line per problem that ended in a
+  reveal, and a summary of how they worked. Held on this server under `CODEBUDDY_MEMORY_PATH`
+  (`data/memory`), unencrypted. Protect the folder and back it up like any personal data.
+- Sent to OpenAI: the recent turns on each write (extraction and summary) and the learner's message
+  on each recall (embedding). Check OpenAI's data terms, especially for minors.
+- mem0 telemetry is disabled (`MEM0_TELEMETRY=False` is set before mem0 loads). Importing mem0 may
+  still create a local `~/.mem0/` folder; nothing is sent.
+- Identity is a signed learner token (HMAC keyed by `CODEBUDDY_MEMORY_SECRET` and bound to the
+  caller's API key), not an account. The token travels in the page URL, so treat it like a
+  password: browser history, bookmarks, and Referer headers can leak it. A link never enables
+  memory by itself; the UI asks first ("Use this profile").
+- A session belongs to the first learner who uses it with memory. Session IDs are client-chosen, so
+  a hostile client can bind an ID that another learner later reuses and cause a 409 for them. It
+  cannot read or write the other learner's notes.
+- With `CODEBUDDY_API_KEYS` empty a token is bound to no key, so anyone holding it can use it. Run
+  memory without API keys only on localhost or in the demo.
+- If `CODEBUDDY_MEMORY_SECRET` is empty the server warns and uses a random per-process secret, so
+  tokens die on restart. Rotating the secret also strands the stored data.
+- Recalled notes are untrusted data: they are placed in a `<memory>` block with `<memory>` tags
+  stripped, and cannot change the hint level or bypass the leak guard.
+- Retention is manual: Forget me (`DELETE /v1/memory/{token}`) or delete `data/memory`.
+
 ## Prompt injection
 
 Learner messages, code, retrieved text, and tool output are placed inside delimiters and the
@@ -49,7 +76,7 @@ learner agrees, restricted by an allowlist and resource limits, offline where th
 ## Secrets
 
 `.env` is gitignored and `.claude/settings.json` denies Claude Code reads of `.env*`. Keys:
-`OPENAI_API_KEY`, `GROQ_API_KEY`, `UPSTASH_REDIS_REST_*`, `CODEBUDDY_API_KEYS`. The Docker image
+`OPENAI_API_KEY`, `GROQ_API_KEY`, `UPSTASH_REDIS_REST_*`, `CODEBUDDY_API_KEYS`, `CODEBUDDY_MEMORY_SECRET`. The ingest CLI and the API load `.env` into the process environment at startup. The Docker image
 contains no secrets; pass them at runtime. Rotate a key by changing the environment and restarting.
 
 ## Not done yet

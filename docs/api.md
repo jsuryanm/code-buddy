@@ -7,13 +7,16 @@ OpenAPI docs are served at `/docs`.
 
 | Method and path | Purpose |
 |---|---|
-| `GET /healthz` | Status, cache type, whether models and speech are configured, tool mode (`mcp`, `local`, `off`), sandbox network isolation, whether a key is required. Always open |
+| `GET /healthz` | Status, cache type, whether models and speech are configured, tool mode (`mcp`, `local`, `off`), sandbox network isolation, `memory_enabled`, whether a key is required. Always open |
 | `POST /v1/turn` | Send a learner message (optionally with code). Streams the reply as SSE |
 | `POST /v1/show-answer` | Learner asks for the full answer. Streams a reveal as SSE |
 | `POST /v1/approve` | Answer a permission request raised by a turn. Streams the rest of that turn |
 | `POST /v1/stt` | Upload recorded audio (multipart field `audio`); returns `{"text", "provider"}` |
 | `GET /v1/session/{id}` | `{"stage", "hints_given", "reveals", "can_show_answer", "run_permission"}` |
-| `GET /v1/metrics` | Counters: turns, cache hits, guard stops, degraded replies, approvals, STT use, judge results, rate-limited requests |
+| `POST /v1/memory/learners` | Mint a signed learner token for opt-in memory. Returns `{"learner_token"}`. 503 when memory is off |
+| `GET /v1/memory/{learner_token}` | List what is remembered: `{"items": [{"kind", "text", "created_at"}]}` |
+| `DELETE /v1/memory/{learner_token}` | Forget everything for that learner: `{"deleted": n}` |
+| `GET /v1/metrics` | Counters: turns, cache hits, guard stops, degraded replies, approvals, STT use, judge results, rate-limited requests, memory recalls, writes, and failures |
 
 When `CODEBUDDY_API_KEYS` is set every `/v1/*` route needs `Authorization: Bearer <key>` or
 `X-API-Key: <key>` (HTTP 401 otherwise). Requests over `CODEBUDDY_RATE_LIMIT_PER_MINUTE` get
@@ -26,12 +29,19 @@ HTTP 429 with a `Retry-After` header. See [security.md](security.md).
   "session_id": "any stable string for one learner and problem session",
   "message": "my sum crashes with an IndexError",
   "code": "nums = [1, 2, 3]\n...",
-  "language": "python"
+  "language": "python",
+  "learner_id": "optional learner token from POST /v1/memory/learners"
 }
 ```
 
 `code` is optional. An empty or blank `message` returns HTTP 422. The session ID is a client
 choice; sessions expire after 2 hours without activity (`TTL_SESSION`).
+
+`learner_id` is the signed token, not a raw ID. Send it only for a learner who opted in to memory.
+It is checked before the stream starts and ignored when memory is off. A malformed token returns
+422; a well-formed token that is not valid for this server, secret, and API key returns 403
+(`Invalid learner token`); a session already bound to a different learner returns 409 (`This
+session belongs to another learner`). `POST /v1/show-answer` takes the same field and errors.
 
 ### `POST /v1/approve`
 
@@ -43,6 +53,18 @@ Resumes a turn that paused to ask whether the tutor may run the learner's code. 
 keeps the answer for the rest of the session. HTTP 404 if the turn is unknown, already answered,
 expired (15 minutes), or belongs to another session. The response is a normal event stream (`meta`,
 `token`, `done`).
+
+### Learner memory
+
+```bash
+curl -X POST localhost:8000/v1/memory/learners          # {"learner_token": "<id>.<signature>"}
+curl localhost:8000/v1/memory/<token>                    # list
+curl -X DELETE localhost:8000/v1/memory/<token>          # forget
+```
+
+All three need the API key when keys are on, and the token is bound to the key that minted it.
+The three routes return 503 when `CODEBUDDY_MEMORY_ENABLED` is off or the store failed to start,
+and 403 for an invalid token (checked before the store is touched). See [memory.md](memory.md).
 
 ### `POST /v1/stt`
 

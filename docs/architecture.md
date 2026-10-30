@@ -19,7 +19,7 @@ src/codebuddy/
   agent/
     code_analysis.py   AST analysis of learner Python; five bug patterns; never executes code
     state.py           TutorState (graph state) and Classification (classifier output)
-    deps.py            Deps container; LLMClassifier and offline HeuristicClassifier
+    deps.py            Deps container (including the optional memory); LLMClassifier and offline HeuristicClassifier
     nodes.py           The graph nodes (TutorNodes), including tool planning and approval
     graph.py           Wires nodes into a LangGraph StateGraph with a checkpointer; run_turn()
   tools/
@@ -27,7 +27,12 @@ src/codebuddy/
     policy.py          Risk classes and the ask / allow / deny rule
     runner.py          LocalToolRunner (in-process) and MCPToolRunner (stdio MCP session)
   mcp_server/          MCPServer exposing the tools (python -m codebuddy.mcp_server)
-  sandbox/             check.py (allowlist), harness.py (child program), runner.py (subprocess)
+  sandbox/             check.py (allowlist), harness.py (child program), runner.py (subprocess),
+                       backend.py (SandboxBackend seam; `local` is the only backend)
+  memory/
+    types.py           MemoryKind (semantic, episodic, procedural), MemoryItem, Episode
+    store.py           LearnerMemory protocol and InMemoryLearnerMemory (tests, demo)
+    mem0_store.py      Mem0LearnerMemory: mem0 over embedded Qdrant (see memory.md)
   stt/
     transcribe.py      Groq Whisper and OpenAI transcribers behind SpeechToText
     normalize.py       Spoken symbols to code ("i plus plus" to "i++"); vocabulary prompt
@@ -47,9 +52,9 @@ src/codebuddy/
     manifest.py        What was ingested, SHA-256, licence
     fakes.py           HashSparse and ScriptedChat for tests, evals, and demo
   api/
-    app.py             FastAPI app: SSE streaming, approvals, speech, metrics, TTFT logging
-    security.py        API keys, rate limiting, pending-approval ownership
-    wiring.py          Builds production resources (cache, models, MCP, checkpointer, STT, judge)
+    app.py             FastAPI app: SSE streaming, approvals, speech, memory endpoints, metrics, TTFT logging
+    security.py        API keys, rate limiting, pending-approval ownership, LearnerTokens
+    wiring.py          Builds production resources (cache, models, MCP, checkpointer, STT, judge, memory); loads .env
     demo.py            Keyless demo app (scripted tutor, real sandbox, canned transcript)
   ui/
     client.py          httpx SSE client (no Streamlit import)
@@ -67,8 +72,10 @@ flowchart LR
     C -- hit --> D[emit_cached]
     C -- miss --> E[classify]
     C -- miss --> F[retrieve]
+    C -- miss --> M[recall_memory<br/>opt-in, 0.6 s timeout]
     E --> R[refine_retrieval]
     F --> R
+    M --> R
     R --> G[policy]
     G --> T{route_tools}
     T -- none or declined --> H[generate<br/>stream + leak guard]
@@ -83,22 +90,24 @@ flowchart LR
 
 | Node | What it does | File |
 |---|---|---|
-| `load_state` | Loads `SessionProgress` from the session cache, trims input, counts identical resubmissions | `agent/nodes.py` |
+| `load_state` | Loads `SessionProgress` from the session cache, trims input, counts identical resubmissions, binds the session to the verified learner (or drops the learner id if the session belongs to another) | `agent/nodes.py` |
 | `analyze_code` | Parses Python with `ast`, records bug patterns and syntax errors | `agent/code_analysis.py` |
-| `check_cache` | L1 exact lookup when no code is attached; optional L2 semantic lookup; on a miss takes a single-flight lock so duplicate concurrent questions generate once | `agent/nodes.py` |
+| `check_cache` | L1 exact lookup when no code is attached; optional L2 semantic lookup; on a miss takes a single-flight lock so duplicate concurrent questions generate once. Skipped entirely for a learner with memory active | `agent/nodes.py` |
 | `emit_cached` | Streams the cached answer; skips every model call | `agent/nodes.py` |
 | `classify` | Fast-tier structured output: intent, PCDIT stage, concepts, search query. Rule-first for "show me the answer"; heuristic fallback on error. A new problem resets the hint ladder | `agent/deps.py` |
 | `retrieve` | Hybrid search over the `fundamentals` corpus using the message plus concepts of detected bug patterns. Runs in parallel with `classify` | `rag/retrieve.py` |
+| `recall_memory` | Only when memory is on and the turn has a verified learner token: searches that learner's notes with the message, under a timeout (`MEMORY_RECALL_TIMEOUT_S`). Errors and timeouts give no notes. Runs in parallel with `classify` and `retrieve` | `agent/nodes.py` |
 | `refine_retrieval` | Only for short follow-ups (8 words or fewer, with history): retrieves again using the classifier's standalone `search_query`. Most turns skip it | `agent/nodes.py` |
 | `policy` | `decide_mode()` with intent, progress, frustration signals, and the clock; also plans which tools to use | `pedagogy/policy.py` |
 | `route_tools` | Maps the learner's stored permission to run, ask, or skip | `tools/policy.py` |
 | `approve_run` | Pauses with `interrupt()` until the learner approves or declines running their code | `agent/nodes.py` |
 | `run_tools` | Calls the planned tools through the tool runner (MCP or in-process) with a timeout | `agent/nodes.py` |
-| `generate` | Builds prompts (including private notes from analysis, runtime facts, and case ideas), streams the chosen tier through `StreamGuard`, handles guard stops and model outages | `agent/nodes.py` |
-| `update_state` | Advances the ladder, appends history, saves progress, stores cacheable answers (and the semantic index entry), releases the lock, counts the turn | `agent/nodes.py` |
+| `generate` | Builds prompts (including private notes from analysis, runtime facts, case ideas, and recalled memory in a `<memory>` block), streams the chosen tier through `StreamGuard`, handles guard stops and model outages | `agent/nodes.py` |
+| `update_state` | Advances the ladder, appends history, saves progress, starts a background memory write on a reveal or every Nth hint, stores cacheable answers (and the semantic index entry), releases the lock, counts the turn | `agent/nodes.py` |
 
-`classify` and `retrieve` run in parallel and join before `refine_retrieval`, so retrieval does not
-wait for the classifier on ordinary turns.
+`classify`, `retrieve`, and `recall_memory` run in parallel and join before `refine_retrieval`, so
+retrieval does not wait for the classifier on ordinary turns, and memory adds no time unless it
+hits its timeout. Without memory `recall_memory` returns at once.
 
 ### Streaming events
 
@@ -156,7 +165,9 @@ implemented yet.
 What is deliberately never cached: hints (they depend on the learner's code and progress) and
 reveals (they depend on the learner's code). `is_answer_cacheable()` in `cache/layers.py` encodes
 this, and an answer is stored only if retrieval was grounded and the reply was neither guarded
-nor degraded.
+nor degraded. Two more rules keep personalized text out of shared caches: a learner with memory
+active skips L1 and L2 completely, and a reply is stored only when the prompt included no session
+history (the key ignores history, so storing a follow-up answer would hand it to other learners).
 
 `CachedEmbeddings` exists because LangChain vector stores call the synchronous embedding methods
 while the cache is asynchronous. `warm_query()` loads or computes the vector into a small
@@ -198,6 +209,9 @@ flowchart LR
 | Learner declines to run code | Reply is generated without a run; choice remembered if asked |
 | Speech provider fails | Next provider is tried; if all fail `/v1/stt` returns 502 and the UI says to type |
 | Judge fails | Ignored; it runs after the reply and never blocks |
+| Memory recall times out or fails | The turn continues without notes; `memory_failures` is counted |
+| Memory write fails | Logged and counted; the learner never sees it |
+| Memory store cannot start | API starts without memory; `/healthz` shows `memory_enabled: false` |
 
 ## State and persistence
 
@@ -208,6 +222,9 @@ flowchart LR
   `turn_id`), so a turn paused for approval can be resumed later and nothing leaks between turns.
   Production uses `AsyncSqliteSaver` on `CODEBUDDY_CHECKPOINT_PATH`; tests use `InMemorySaver`.
   Types stored in checkpoints are registered in `CHECKPOINT_TYPES` (`agent/graph.py`).
+- **Learner memory** is separate from both: mem0 over embedded Qdrant under `CODEBUDDY_MEMORY_PATH`,
+  opt-in, keyed by a signed learner token. It lasts until the learner deletes it. See
+  [memory.md](memory.md).
 - The spec names Postgres for checkpoints. SQLite avoids another service; swap the saver in
   `api/wiring.py` if you need shared checkpoints across several API hosts.
 
@@ -217,4 +234,5 @@ Instructor features: corpus approval queue, learner reports (12.4 surface 3). Pe
 Langfuse tracing (17.4). Synthetic-question generation at ingestion (9.2). A hard sandbox
 boundary and deployment automation (17, see [security.md](security.md) and
 [deployment.md](deployment.md)). The L5 tool-result cache (10.3): tool runs depend on the learner's
-code and are not cached.
+code and are not cached. Concept-mastery scores and solved detection for the learner model (8.6);
+memory keeps only private notes (see [memory.md](memory.md)).
