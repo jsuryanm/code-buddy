@@ -71,7 +71,7 @@ Explicit requests are matched by `asks_for_answer()`, for example "show me the a
 Known gap: the tutor does not detect that a learner solved the problem. The ladder resets only on
 a reveal, a classified new problem, session expiry (2 hours idle), or a new session. If a
 learner finishes one problem and moves on without saying so, the next question may start at a
-higher hint level. The UI's "New session" button is the manual reset.
+higher hint level. The UI's **New chat** button is the manual reset.
 
 ## Leak guard rules (`pedagogy/guard.py`)
 

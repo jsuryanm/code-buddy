@@ -108,8 +108,11 @@ uv run uvicorn codebuddy.api.demo:app --port 8000        # terminal 1
 uv run streamlit run src/codebuddy/ui/app.py             # terminal 2
 ```
 
-Open http://localhost:8501, paste buggy Python, and ask a question. Click **Show answer** after
-the first hint, and approve the run when the tutor asks to execute your code. The demo replays
+Open http://localhost:8501, paste buggy Python into **Your code**, and ask a question. The tutor
+shows its steps while it works, then streams the reply; references sit collapsed under each
+reply. Click **Show answer** after the first hint, and approve the run when the tutor asks to
+execute your code. **New chat** in the sidebar starts a fresh problem; earlier chats stay listed
+there for this tab. The demo replays
 scripted replies over a small sample corpus in `data/sample/`; the policy, leak guard,
 approval step, and sandbox are real.
 
@@ -130,7 +133,8 @@ CUDA_VISIBLE_DEVICES= uv run python -m codebuddy.rag.ingest data/raw/thinkpython
     --corpus fundamentals --title "Think Python (v2.0.17)" --licence "CC BY-NC 3.0 Unported"
 ```
 
-Start the API and UI:
+Start the API and UI. The UI reads the API address from `CODEBUDDY_API_URL` (default
+`http://localhost:8000`) and, if the server requires one, the key from `CODEBUDDY_API_KEY`:
 
 ```bash
 uv run uvicorn codebuddy.api.app:app --port 8000         # terminal 1
@@ -143,7 +147,7 @@ documents instead. Full steps: [docs/setup.md](docs/setup.md).
 
 ### C. Optional features
 
-- **Voice.** Set `GROQ_API_KEY` and restart the API; the microphone widget appears. See
+- **Voice.** Set `GROQ_API_KEY` and restart the API; a microphone appears in the chat input. See
   [docs/ui.md](docs/ui.md).
 - **Memory.** Set `CODEBUDDY_MEMORY_ENABLED=true` and `CODEBUDDY_MEMORY_SECRET`. It calls OpenAI
   and stores personal data, so read [docs/memory.md](docs/memory.md) first.

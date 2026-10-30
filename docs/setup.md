@@ -130,12 +130,12 @@ uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 | Microphone widget missing, or "Voice input is off" | The server has no speech provider. Set `GROQ_API_KEY` and restart the API (`/healthz` shows `stt_configured`) |
 | `Voice input failed (502)` | Groq (and the fallback, if set) rejected or failed the request. Type the question instead; the API log has the cause |
 | The tutor never asks to run my code | Tools are off (`CODEBUDDY_TOOLS_ENABLED=false`), the code has a syntax error, the learner already answered "remember" for this session, or the message was a concept question without code |
-| `401 Missing or invalid API key` | `CODEBUDDY_API_KEYS` is set on the server. Put a matching key in the UI sidebar or `CODEBUDDY_API_KEY` |
+| `401 Missing or invalid API key` | `CODEBUDDY_API_KEYS` is set on the server. Set a matching `CODEBUDDY_API_KEY` before starting Streamlit |
 | `429 Too many requests` | Rate limit hit. Wait for `Retry-After` seconds or raise `CODEBUDDY_RATE_LIMIT_PER_MINUTE` |
 | MCP warning "calling tools in-process" in the API log | The MCP subprocess did not start; tools still work in-process. Check that `python -m codebuddy.mcp_server` runs |
 | Docling segfaults during PDF ingestion (WSL) | PyTorch crashes in its CUDA probe. Run ingestion with `CUDA_VISIBLE_DEVICES=` set to empty, for example `CUDA_VISIBLE_DEVICES= uv run python -m codebuddy.rag.ingest ...` |
 | `/healthz` shows `"memory_enabled": false` after setting `CODEBUDDY_MEMORY_ENABLED=true` | The memory store failed to start (the API log says why, often a locked `data/memory` or a missing `CODEBUDDY_MODEL_FAST`). The API runs without memory |
 | `403 Invalid learner token` | The token was minted under another `CODEBUDDY_MEMORY_SECRET`, another API key, or a restart with no secret set. Tick the box again to get a new one |
-| `409 This session belongs to another learner` | That session ID was first used with memory by someone else. Use **New session** |
+| `409 This session belongs to another learner` | That session ID was first used with memory by someone else. Use **New chat** |
 | First start is slow | `fastembed` downloads the BM25 model once. |
-| Streamlit shows "API not reachable" | Start the API first, or fix the API URL in the sidebar. |
+| Streamlit shows "Can't reach the tutor" | Start the API first, or set `CODEBUDDY_API_URL` before starting Streamlit. |

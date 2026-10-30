@@ -61,17 +61,19 @@ use `CODEBUDDY_EMBED_MODEL`.
 
 ## Opt-in and "Forget me"
 
-1. The sidebar checkbox **Remember me across sessions** is always unchecked on a fresh page.
+1. The checkbox **Remember me across sessions** (in the sidebar **Settings** popover) is always unchecked on a fresh page.
 2. Ticking it asks the server for a learner token (`POST /v1/memory/learners`). The UI keeps the
    token in the session and in the page URL as `?learner=<token>`, so a bookmark restores the
    profile later.
-3. Opening a page whose URL already has `?learner=` does not enable memory. The sidebar says "This
+3. Opening a page whose URL already has `?learner=` does not enable memory. The Settings popover says "This
    link contains a saved learner profile. Use it only if you created it." and waits for **Use
    this profile**. A link alone never turns memory on or sends the token.
 4. While memory is on, the expander **What I remember about you** lists every stored item by
    kind (`GET /v1/memory` with the token in header `X-Learner-Token`).
 5. **Forget me** deletes every item for that learner (`DELETE /v1/memory`, same header), shows how
-   many were removed, and turns the opt-in off.
+   many were removed, turns the opt-in off, and starts a new chat (new session ID), because the
+   server binds a session to one learner. Adopting a profile with **Use this profile** also starts
+   a new chat.
 
 Without the box ticked, no token is sent and no memory is read or written.
 

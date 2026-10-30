@@ -17,6 +17,7 @@ class Stub:
     def __init__(self, memory_enabled=True):
         self.memory_enabled = memory_enabled
         self.turns, self.shows, self.forgotten, self.minted = [], [], [], []
+        self.sessions = []
         self.items = [
             {"kind": "semantic", "text": "Mixes up range bounds", "created_at": ""},
             {"kind": "episodic", "text": "Saw the full answer on loops", "created_at": ""},
@@ -28,6 +29,7 @@ class Stub:
 
     def stream_turn(self, session_id, message, code, language="python", learner_id=None):
         self.turns.append(learner_id)
+        self.sessions.append(session_id)
         return iter([("meta", META), ("token", {"text": "Hmm."}), ("done", {"citations": []})])
 
     def stream_show_answer(self, session_id, code, language="python", learner_id=None):
@@ -146,3 +148,52 @@ def test_forget_failure_is_shown_not_raised():
     at = accepted(stub)
     at.button(key="forget_me").click().run()
     assert not at.exception and at.sidebar.error
+
+
+def assert_no_conflict(stub) -> None:
+    """Mimic the server: a session binds to the first token it sees; after that, a turn with
+    another token or none is answered with 409."""
+    bound: dict = {}
+    for sid, lid in zip(stub.sessions, stub.turns, strict=True):
+        if sid in bound:
+            assert lid == bound[sid], "the server would answer 409"
+        elif lid:
+            bound[sid] = lid
+
+
+def test_forget_then_re_enable_uses_a_new_session():
+    stub = Stub()
+    at = accepted(stub)
+    at.chat_input[0].set_value("hi").run()
+    first = stub.sessions[-1]
+    at.button(key="forget_me").click().run()
+    assert first not in [c["session_id"] for c in at.session_state["chats"]]
+    at.chat_input[0].set_value("no memory now").run()
+    at.checkbox(key=BOX).check().run()
+    at.chat_input[0].set_value("remember me again").run()
+    assert stub.turns == [TOKEN, None, stub.minted[0]]
+    assert stub.sessions[1] != first and stub.sessions[2] == stub.sessions[1]
+    assert_no_conflict(stub)
+
+
+def test_adopting_a_link_token_starts_a_new_chat():
+    stub = Stub()
+    at = make_app(stub, {"learner": TOKEN})
+    at.chat_input[0].set_value("hi").run()
+    before = stub.sessions[-1]
+    at.button(key="use_profile").click().run()
+    at.chat_input[0].set_value("again").run()
+    assert stub.sessions[-1] != before and stub.turns == [None, TOKEN]
+    assert len(at.session_state["chats"]) == 2
+
+
+def test_turning_memory_off_moves_the_next_message_to_a_new_chat():
+    stub = Stub()
+    at = accepted(stub)
+    at.chat_input[0].set_value("hi").run()
+    at.checkbox(key=BOX).uncheck().run()
+    assert any("starts a new chat" in c.value for c in at.caption)
+    assert not [b for b in at.button if b.key == "show_answer"]
+    at.chat_input[0].set_value("without memory").run()
+    assert stub.turns == [TOKEN, None] and stub.sessions[0] != stub.sessions[1]
+    assert_no_conflict(stub)

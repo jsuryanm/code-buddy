@@ -75,16 +75,25 @@ def make_app(client) -> AppTest:
 
 
 def texts(at: AppTest) -> list[str]:
-    return [m.markdown[0].value for m in at.chat_message if m.markdown]
+    return [md.value for m in at.chat_message for md in m.markdown]
+
+
+def chat(at: AppTest) -> dict:
+    sid = at.session_state["chat_id"]
+    return next(c for c in at.session_state["chats"] if c["session_id"] == sid)
+
+
+def code_box(at: AppTest):
+    return at.text_area(key=f"code_{at.session_state['chat_id']}")
 
 
 def test_permission_prompt_appears_and_approving_continues_the_turn():
     stub = Stub()
     at = make_app(stub)
-    at.text_area(key="code").set_value("for i in range(4):\n    print(nums[i])").run()
+    code_box(at).set_value("for i in range(4):\n    print(nums[i])").run()
     at.chat_input[0].set_value("my loop will crash").run()
     assert not at.exception
-    assert at.session_state["pending"]["turn_id"] == "t1"
+    assert chat(at)["pending"]["turn_id"] == "t1"
     assert at.button(key="approve_run") is not None and at.button(key="decline_run") is not None
     assert not [t for t in texts(at) if "IndexError" in t]  # nothing said before the decision
 
@@ -92,13 +101,13 @@ def test_permission_prompt_appears_and_approving_continues_the_turn():
     assert not at.exception
     assert stub.approvals == [("t1", True, True)]
     assert any("IndexError" in t for t in texts(at))
-    assert at.session_state["pending"] is None
+    assert chat(at)["pending"] is None
 
 
 def test_declining_continues_without_running():
     stub = Stub()
     at = make_app(stub)
-    at.text_area(key="code").set_value("print(nums[9])").run()
+    code_box(at).set_value("print(nums[9])").run()
     at.chat_input[0].set_value("it will crash").run()
     at.button(key="decline_run").click().run()
     assert stub.approvals == [("t1", False, True)]
@@ -118,3 +127,25 @@ def test_transcript_can_be_edited_before_sending():
     assert not at.exception
     assert stub.turns == [("why is my for loop off by one", None)]
     assert "transcript" not in at.session_state or not at.session_state["transcript"]
+    assert "why is my for loop off by one" in texts(at)
+
+
+def test_transcript_can_be_discarded():
+    stub = Stub()
+    at = AppTest.from_file(APP, default_timeout=10)
+    at.session_state["client"] = stub
+    at.session_state["transcript"] = "noise"
+    at.session_state["transcript_edit"] = "noise"
+    at.run()
+    at.button(key="discard_transcript").click().run()
+    assert not at.exception and stub.turns == []
+    assert not [t for t in at.text_area if t.key == "transcript_edit"]
+
+
+def test_chat_input_accepts_audio_only_when_voice_is_configured():
+    stub = Stub()
+    at = make_app(stub)
+    assert at.chat_input[0].proto.accept_audio is True
+    stub.health = lambda: {"status": "ok", "stt_configured": False}
+    at.run()
+    assert at.chat_input[0].proto.accept_audio is False

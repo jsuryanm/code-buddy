@@ -1,25 +1,22 @@
 """Streamlit front end. A thin client: all tutoring logic lives in the API.
 
-Run:  uv run streamlit run src/codebuddy/ui/app.py   (API on http://localhost:8000)
+Run:  uv run streamlit run src/codebuddy/ui/app.py
+The API address comes from CODEBUDDY_API_URL (default http://localhost:8000) and the key, when
+the server needs one, from CODEBUDDY_API_KEY. Neither is shown to the learner.
 """
 
 from __future__ import annotations
 
-import hashlib
 import os
+import time
 import uuid
 
 import streamlit as st
 
 from codebuddy.ui.client import ApiError, TutorClient
 
-STAGES = [
-    ("P", "Problem"),
-    ("C", "Cases"),
-    ("D", "Design"),
-    ("I", "Implement"),
-    ("T", "Test"),
-]
+LANGUAGE = "python"
+STAGES = [("P", "Problem"), ("C", "Cases"), ("D", "Design"), ("I", "Implement"), ("T", "Test")]
 LEVEL_NAMES = {
     0: "Hint 1: think it through",
     1: "Hint 2: look here",
@@ -28,132 +25,114 @@ LEVEL_NAMES = {
     4: "Full answer",
 }
 MEMORY_BOX = "remember_me"
-RESET_KEYS = (
-    "session_id",
-    "messages",
-    "stage",
-    "can_show",
-    "offer",
-    "pending",
-    "transcript",
-    "transcript_edit",
-    "last_audio",
-)
+TITLE_CHARS = 40
+AVATARS = {"user": ":material/person:", "assistant": ":material/school:"}
+# Chat titles in the sidebar read like a list, not like centered buttons.
+SIDEBAR_CSS = """<style>
+section[data-testid="stSidebar"] .stButton button { justify-content: flex-start; }
+</style>"""
+
+
+# ---------- state: one tab holds several chats, each with its own server session ----------
+
+
+def new_chat(code: str = "") -> dict:
+    return {
+        "session_id": uuid.uuid4().hex,
+        "messages": [],  # {role, content, meta, done, steps, elapsed}
+        "stage": "P",
+        "can_show": False,
+        "offer": False,
+        "pending": None,  # a turn waiting for permission to run the learner's code
+        "code": code,
+        "learner": None,  # the learner token this chat's session is bound to on the server
+    }
 
 
 def init_state() -> None:
     ss = st.session_state
-    ss.setdefault("session_id", uuid.uuid4().hex)
-    ss.setdefault("messages", [])  # {role, content, meta, done}
-    ss.setdefault("stage", "P")
-    ss.setdefault("can_show", False)
-    ss.setdefault("offer", False)
-    ss.setdefault("pending", None)  # a turn waiting for permission to run the learner's code
+    if not ss.get("chats"):
+        ss.chats = [new_chat()]
+        ss.chat_id = ss.chats[0]["session_id"]
 
 
-def get_client(base_url: str, api_key: str | None) -> TutorClient:
+def find_chat(session_id: str | None) -> dict | None:
+    return next((c for c in st.session_state.chats if c["session_id"] == session_id), None)
+
+
+def current_chat() -> dict:
+    return find_chat(st.session_state.chat_id)
+
+
+def is_empty(chat: dict) -> bool:
+    return not chat["messages"] and not chat["pending"]
+
+
+def start_new_chat(code: str = "") -> dict:
+    """Open a fresh chat (new session id) at the top of the list. An unused chat is replaced."""
+    ss = st.session_state
+    current = find_chat(ss.get("chat_id"))
+    if current is not None and is_empty(current):
+        ss.chats.remove(current)
+    chat = new_chat(code)
+    ss.chats.insert(0, chat)
+    ss.chat_id = chat["session_id"]
+    return chat
+
+
+def on_new_chat() -> None:
+    if not is_empty(current_chat()):
+        start_new_chat()
+
+
+def switch_chat(session_id: str) -> None:
+    st.session_state.chat_id = session_id
+
+
+def chat_title(chat: dict) -> str:
+    first = next((m["content"] for m in chat["messages"] if m["role"] == "user"), "")
+    first = " ".join(first.split())
+    if not first:
+        return "New chat"
+    return first if len(first) <= TITLE_CHARS else first[: TITLE_CHARS - 3].rstrip() + "..."
+
+
+def get_client() -> TutorClient:
     # Tests inject a stub through session_state["client"].
-    return st.session_state.get("client") or TutorClient(base_url, api_key=api_key or None)
-
-
-def stage_bar(current: str) -> None:
-    cols = st.columns(len(STAGES))
-    for col, (letter, name) in zip(cols, STAGES, strict=True):
-        label = f"**{letter}** {name}"
-        col.markdown(f":blue-background[{label}]" if letter == current else label)
-
-
-def render_meta(meta: dict | None, done: dict | None) -> None:
-    if not meta:
-        return
-    badges = []
-    if meta.get("mode") == "hint" and meta.get("level") is not None:
-        badges.append(LEVEL_NAMES[meta["level"]])
-    elif meta.get("mode") == "reveal":
-        badges.append(LEVEL_NAMES[4])
-    elif meta.get("mode") == "explain":
-        badges.append("Explanation")
-    if meta.get("cached"):
-        badges.append("instant (cached)")
-    if badges:
-        st.caption(" · ".join(badges))
-    if done:
-        if done.get("degraded"):
-            st.warning("The tutor model was unavailable, so this is course material only.")
-        for i, c in enumerate(done.get("citations", []), start=1):
-            label = f"[{i}] {c['source']}" + (f", {c['section']}" if c.get("section") else "")
-            st.caption(label)
-
-
-def run_stream(events) -> tuple[str, dict | None, dict | None, dict | None]:
-    """Consume SSE events, streaming tokens into the page.
-
-    Returns (text, meta, done, approval). `approval` is set when the tutor paused to ask
-    permission to run the learner's code.
-    """
-    box: dict = {"meta": None, "done": None, "approval": None}
-
-    def tokens():
-        for kind, data in events:
-            if kind == "meta":
-                box["meta"] = data
-            elif kind == "token":
-                yield data["text"]
-            elif kind == "approval":
-                box["approval"] = data
-            elif kind == "done":
-                box["done"] = data
-            elif kind == "error":
-                raise ApiError(data.get("message", "error"))
-
-    text = st.write_stream(tokens())
-    return str(text or ""), box["meta"], box["done"], box["approval"]
-
-
-def apply_result(text: str, meta: dict | None, done: dict | None, approval: dict | None) -> None:
     ss = st.session_state
-    if text:
-        ss.messages.append({"role": "assistant", "content": text, "meta": meta, "done": done})
-    ss.pending = approval
-    if done and done.get("stage"):
-        ss.stage = done["stage"]
-    if meta:
-        ss.can_show = bool(meta.get("can_show_answer")) or (done or {}).get("hints_given", 0) >= 1
-        ss.offer = bool(meta.get("offer_answer"))
-        if meta.get("mode") == "reveal":
-            ss.can_show, ss.offer = False, False
+    if "client" not in ss:
+        url = os.getenv("CODEBUDDY_API_URL", "http://localhost:8000")
+        ss.client = TutorClient(url, api_key=os.getenv("CODEBUDDY_API_KEY") or None)
+    return ss.client
 
 
-def handle_voice(client, enabled: bool) -> None:
-    """Record, transcribe, and let the learner edit the text before sending."""
+# ---------- memory (opt-in, lives in the Settings popover) ----------
+
+
+def active_learner() -> str | None:
+    """The learner token sent with turns: only while the opt-in box is ticked."""
     ss = st.session_state
-    if not enabled:
-        st.caption("Voice input is off: the server has no speech-to-text configured.")
-        return
-    audio = st.audio_input("Or ask by voice", key="mic")
-    if audio is not None:
-        data = audio.getvalue()
-        digest = hashlib.sha1(data).hexdigest()
-        if digest != ss.get("last_audio"):
-            ss.last_audio = digest
-            try:
-                ss.transcript = client.transcribe(data, audio.name or "speech.wav", audio.type)
-                ss.transcript_edit = ss.transcript
-            except ApiError as exc:
-                st.warning(f"{exc}. You can type your question instead.")
+    return ss.get("learner_id") if ss.get(MEMORY_BOX) else None
 
 
 def forget_me(client) -> None:
-    """Button callback: delete the server-side memory, then reset the opt-in."""
+    """Button callback: delete the server-side memory, reset the opt-in, start a new chat.
+
+    The server binds a session to one learner, so chats made under the forgotten token are
+    dropped and a new chat (new session id) begins.
+    """
     ss = st.session_state
+    token = ss["learner_id"]
     try:
-        ss["memory_note"] = f"{client.forget(ss['learner_id'])} remembered items deleted."
+        ss["memory_note"] = f"{client.forget(token)} remembered items deleted."
     except ApiError as exc:
         ss["memory_note"] = f"error: {exc}"
         return
     ss["learner_id"] = None
     ss[MEMORY_BOX] = False
     st.query_params.pop("learner", None)
+    ss.chats = [c for c in ss.chats if c["learner"] != token]
+    start_new_chat()
 
 
 def enable_memory(client) -> None:
@@ -175,10 +154,11 @@ def use_profile() -> None:
     ss = st.session_state
     ss["learner_id"] = st.query_params["learner"]
     ss[MEMORY_BOX] = True
+    start_new_chat()  # a different learner: the server would refuse the old session
 
 
-def memory_sidebar(client) -> str | None:
-    """Opt-in box, what is remembered, and "Forget me". Returns the learner token while enabled."""
+def memory_settings(client) -> None:
+    """Opt-in box, what is remembered, and "Forget me"."""
     ss = st.session_state
     st.checkbox(
         "Remember me across sessions", key=MEMORY_BOX, on_change=enable_memory, args=(client,)
@@ -193,7 +173,7 @@ def memory_sidebar(client) -> str | None:
     if ss.get("memory_note"):
         (st.error if ss["memory_note"].startswith("error") else st.markdown)(ss.pop("memory_note"))
     if not ss.get(MEMORY_BOX):
-        return None
+        return
     with st.expander("What I remember about you"):
         try:
             items = client.memories(ss["learner_id"])
@@ -207,133 +187,388 @@ def memory_sidebar(client) -> str | None:
             for item in (i for i in items if i["kind"] == kind):
                 st.markdown(f"- {item['text']}")
     st.button("Forget me", key="forget_me", on_click=forget_me, args=(client,))
-    return ss["learner_id"]
 
 
-def main() -> None:
-    st.set_page_config(page_title="CodeBuddy", page_icon="🧭", layout="wide")
-    init_state()
+# ---------- sidebar ----------
+
+
+def sidebar(client, health: dict | None) -> None:
     ss = st.session_state
-
-    learner_id = None
     with st.sidebar:
-        st.title("CodeBuddy")
-        base_url = st.text_input("API URL", os.getenv("CODEBUDDY_API_URL", "http://localhost:8000"))
-        api_key = st.text_input("API key", os.getenv("CODEBUDDY_API_KEY", ""), type="password")
-        language = st.selectbox("Language", ["python"])
-        if st.button("New session"):
-            for key in RESET_KEYS:
-                ss.pop(key, None)
-            st.rerun()
-        client = get_client(base_url, api_key)
-        health = client.health()
-        if health is None:
-            st.error("API not reachable")
-        else:
-            st.success(f"API ok · cache: {health.get('cache')}")
-            if not health.get("models_configured"):
-                st.warning("Model IDs are not configured on the server.")
-            st.caption(
-                f"Tools: {health.get('tools', 'off')} · voice: "
-                f"{'on' if health.get('stt_configured') else 'off'}"
+        st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
+        st.markdown("### CodeBuddy")
+        st.button(
+            "New chat", key="new_chat", icon=":material/add:", on_click=on_new_chat, width="stretch"
+        )
+        listed = [c for c in ss.chats if c["messages"]]
+        if listed:
+            st.caption("Chats")
+        for chat in listed:
+            sid = chat["session_id"]
+            st.button(
+                chat_title(chat),
+                key=f"chat_{sid}",
+                type="secondary" if sid == ss.chat_id else "tertiary",
+                on_click=switch_chat,
+                args=(sid,),
+                width="stretch",
+                wrap=False,
             )
-            if health.get("memory_enabled"):
-                learner_id = memory_sidebar(client)
-        st.caption(f"Session {ss.session_id[:8]}")
+        st.divider()
+        if health is None:
+            st.caption(":material/cloud_off: Can't reach the tutor")
+            return
+        st.caption(":material/check_circle: Connected")
+        if not health.get("models_configured"):
+            st.caption("The tutor's models are not configured on the server.")
+        if health.get("memory_enabled"):
+            if "learner" in st.query_params and not ss.get(MEMORY_BOX):
+                st.caption("This link has a saved profile. Open Settings to use it.")
+            with st.popover("Settings", icon=":material/settings:", width="stretch"):
+                memory_settings(client)
 
-    st.subheader("Let's work it out together")
-    stage_bar(ss.stage)
 
-    with st.expander("Your code", expanded=True):
-        code = st.text_area(
+# ---------- the thread ----------
+
+
+def stage_line(current: str) -> None:
+    parts = [
+        f":blue-background[**{name}**]" if letter == current else f":gray[{name}]"
+        for letter, name in STAGES
+    ]
+    st.markdown(" &nbsp;›&nbsp; ".join(parts))
+
+
+def steps_summary(steps: list[dict], elapsed: float | None) -> str:
+    n = len(steps)
+    count = f"{n} step" + ("" if n == 1 else "s")
+    return f"Worked for {elapsed:.1f} s · {count}" if elapsed is not None else count
+
+
+def steps_markdown(steps: list[dict]) -> str:
+    lines = []
+    for s in steps:
+        icon = ":material/check:" if s["status"] == "done" else ":material/more_horiz:"
+        detail = f" :gray[· {s['detail']}]" if s.get("detail") else ""
+        lines.append(f"{icon} {s['label']}{detail}")
+    return "  \n".join(lines)
+
+
+def section_name(citation: dict) -> str:
+    """ "Think Python › 2.10 Debugging" -> "2.10 Debugging"."""
+    section = citation.get("section") or ""
+    return section.split("›")[-1].strip() or citation["source"]
+
+
+def render_references(citations: list[dict]) -> None:
+    if not citations:
+        return
+    sources = list(dict.fromkeys(c["source"] for c in citations))
+    with st.expander(f"References ({len(citations)})", icon=":material/menu_book:"):
+        if len(sources) == 1:
+            st.caption(sources[0])
+        rows = []
+        for i, c in enumerate(citations, start=1):
+            where = f" :gray[({c['source']})]" if len(sources) > 1 else ""
+            rows.append(f"[{i}] {section_name(c)}{where}")
+        st.markdown("  \n".join(rows))
+
+
+def reply_caption(meta: dict | None) -> str:
+    if not meta:
+        return ""
+    badges = []
+    if meta.get("mode") == "hint" and meta.get("level") is not None:
+        badges.append(LEVEL_NAMES[meta["level"]])
+    elif meta.get("mode") == "reveal":
+        badges.append(LEVEL_NAMES[4])
+    elif meta.get("mode") == "explain":
+        badges.append("Explanation")
+    if meta.get("cached"):
+        badges.append("instant")
+    return " · ".join(badges)
+
+
+def render_footer(meta: dict | None, done: dict | None) -> None:
+    """Caption, outage warning, and the collapsed references under a tutor reply."""
+    caption = reply_caption(meta)
+    if caption:
+        st.caption(caption)
+    if done and done.get("degraded"):
+        st.warning("The tutor model was unavailable, so this is course material only.")
+    render_references((done or {}).get("citations") or [])
+
+
+def show_answer_button(chat: dict) -> bool:
+    if chat["offer"]:
+        st.caption("Stuck for a while is normal. You can see the full answer whenever you like.")
+    return st.button(
+        "Show answer",
+        key="show_answer",
+        icon=":material/visibility:",
+        type="primary" if chat["offer"] else "secondary",
+        help="Available after your first hint. No need to justify, just ask.",
+    )
+
+
+def render_steps(record: dict) -> None:
+    """The collapsed step summary of a finished turn."""
+    if record.get("steps"):
+        label = steps_summary(record["steps"], record.get("elapsed"))
+        with st.status(label, state="complete", expanded=False):
+            st.markdown(steps_markdown(record["steps"]))
+
+
+def render_thread(chat: dict, stale: bool) -> bool:
+    """Draw past messages. Returns True when Show answer (under the latest reply) was clicked."""
+    messages = chat["messages"]
+    latest = max((i for i, m in enumerate(messages) if m["role"] == "assistant"), default=-1)
+    allow_show = chat["can_show"] and not chat["pending"] and not stale
+    clicked = False
+    for i, m in enumerate(messages):
+        with st.chat_message(m["role"], avatar=AVATARS[m["role"]]):
+            render_steps(m)
+            st.markdown(m["content"])
+            if m["role"] == "assistant":
+                render_footer(m.get("meta"), m.get("done"))
+                if i == latest and allow_show:
+                    clicked = show_answer_button(chat)
+    return clicked
+
+
+def permission_prompt(pending: dict) -> tuple[bool, bool]:
+    """The tutor will not run the learner's code without asking. Returns (approve, decline)."""
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
+        render_steps(pending)
+        st.markdown(f"**{pending['message']}**")
+        st.caption("It runs in a restricted sandbox with no network and shows what happened.")
+        st.code(pending.get("code", ""), language="python")
+        st.checkbox("Remember my choice for this chat", value=True, key="remember")
+        left, right = st.columns(2)
+        approve = left.button(
+            "Run my code", key="approve_run", type="primary", icon=":material/play_arrow:"
+        )
+        decline = right.button("Don't run it", key="decline_run")
+    return approve, decline
+
+
+def code_box(chat: dict) -> str:
+    """Collapsed "Your code" box. Each chat keeps its own text."""
+    lines = len(chat["code"].splitlines())
+    label = f"Your code ({lines} line{'' if lines == 1 else 's'})" if lines else "Your code"
+    with st.expander(label, icon=":material/code:"):
+        chat["code"] = st.text_area(
             "Paste the code you are working on",
-            key="code",
+            value=chat["code"],
+            key=f"code_{chat['session_id']}",
             height=220,
             label_visibility="collapsed",
             placeholder="# paste your code here",
         )
+    return chat["code"]
 
-    show_clicked = st.button(
-        "Show answer",
-        key="show_answer",
-        disabled=not ss.can_show,
-        type="primary" if ss.offer else "secondary",
-        help="Available after your first hint. No need to justify, just ask.",
-    )
-    if ss.offer:
-        st.info("Stuck for a while is normal. You can see the full answer whenever you like.")
 
-    for m in ss.messages:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-            if m["role"] == "assistant":
-                render_meta(m.get("meta"), m.get("done"))
+# ---------- voice ----------
 
-    # Permission request: the tutor will not run the learner's code without asking.
-    approve_clicked = decline_clicked = False
-    if ss.pending:
-        with st.chat_message("assistant"):
-            st.markdown(f"**{ss.pending['message']}**")
-            st.caption("It runs in a restricted sandbox with no network and shows what happened.")
-            st.code(ss.pending.get("code", ""), language="python")
-            st.checkbox("Remember my choice for this session", value=True, key="remember")
-            left, right = st.columns(2)
-            approve_clicked = left.button("Run my code", key="approve_run", type="primary")
-            decline_clicked = right.button("Don't run it", key="decline_run")
 
-    handle_voice(client, bool(health and health.get("stt_configured")))
-    send_transcript = False
-    if ss.get("transcript"):
-        st.text_area("Transcript (edit before sending)", key="transcript_edit", height=80)
-        send_transcript = st.button("Send transcript", key="send_transcript")
-
-    prompt = st.chat_input("What are you stuck on?")
-    if send_transcript:
-        prompt = (ss.get("transcript_edit") or "").strip() or None
-        ss.pop("transcript", None)
-        ss.pop("transcript_edit", None)
-
-    if not (prompt or show_clicked or approve_clicked or decline_clicked):
+def transcribe(client, text: str, audio) -> None:
+    """A recording from the chat input becomes an editable transcript, never a sent message."""
+    ss = st.session_state
+    try:
+        heard = client.transcribe(audio.getvalue(), audio.name or "speech.wav", audio.type)
+    except ApiError as exc:
+        ss["voice_note"] = f"{exc}. You can type your question instead."
         return
+    ss.transcript = " ".join(part for part in (text, heard) if part)
+    ss.transcript_edit = ss.transcript
 
-    session_id = ss.session_id
-    who = {"learner_id": learner_id} if learner_id else {}
-    if approve_clicked or decline_clicked:
-        turn_id = ss.pending["turn_id"]
-        decision = approve_clicked
-        ss.pending = None
-        events = lambda: client.stream_approve(  # noqa: E731
-            session_id, turn_id, decision, ss.get("remember", True)
-        )
-        user_text = None
-    elif show_clicked:
-        user_text = "Show me the full answer."
-        events = lambda: client.stream_show_answer(  # noqa: E731
-            session_id, code or None, language, **who
-        )
-    else:
-        user_text = prompt
-        events = lambda: client.stream_turn(  # noqa: E731
-            session_id, prompt, code or None, language, **who
-        )
 
+def discard_transcript() -> None:
+    st.session_state.pop("transcript", None)
+    st.session_state.pop("transcript_edit", None)
+
+
+def transcript_box() -> str | None:
+    """Show 'Heard: ...' for editing. Returns the text when the learner clicks Send."""
+    ss = st.session_state
+    if ss.get("voice_note"):
+        st.warning(ss.pop("voice_note"))
+    if not ss.get("transcript"):
+        return None
+    with st.container(border=True):
+        st.text_area("Heard (edit before sending)", key="transcript_edit", height=80)
+        left, right = st.columns(2)
+        send = left.button("Send", key="send_transcript", type="primary", icon=":material/send:")
+        right.button("Discard", key="discard_transcript", on_click=discard_transcript)
+    if not send:
+        return None
+    text = (ss.get("transcript_edit") or "").strip()
+    discard_transcript()
+    return text or None
+
+
+def read_chat_input(client, voice: bool) -> str | None:
+    value = st.chat_input("What are you stuck on?", accept_audio=voice)
+    if value is None or isinstance(value, str):
+        return value or None
+    if value.audio is not None:
+        transcribe(client, value.text, value.audio)
+        st.rerun()  # show the transcript box above the input
+    return value.text or None
+
+
+# ---------- one turn ----------
+
+
+def stream_reply(events) -> dict:
+    """Show live steps in a status box, then stream the reply below it.
+
+    The box collapses to "Worked for N s · K steps" when the first token arrives.
+    Returns {text, meta, done, approval, steps, elapsed}.
+    """
+    out: dict = {"meta": None, "done": None, "approval": None, "steps": {}, "elapsed": None}
+    started = time.monotonic()
+    slot = st.empty()
+    box: dict = {}
+
+    def show_steps() -> None:
+        if "status" not in box:
+            box["status"] = slot.status("Working on it", expanded=True)
+            box["body"] = box["status"].empty()
+        box["body"].markdown(steps_markdown(list(out["steps"].values())))
+
+    def close_steps() -> None:
+        if out["elapsed"] is None:
+            out["elapsed"] = time.monotonic() - started
+            if "status" in box:
+                label = steps_summary(list(out["steps"].values()), out["elapsed"])
+                box["status"].update(label=label, state="complete", expanded=False)
+
+    def tokens():
+        for kind, data in events:
+            if kind == "step":
+                out["steps"][data["key"]] = data
+                show_steps()
+            elif kind == "meta":
+                out["meta"] = data
+            elif kind == "token":
+                close_steps()
+                yield data["text"]
+            elif kind == "approval":
+                out["approval"] = data
+            elif kind == "done":
+                out["done"] = data
+            elif kind == "error":
+                if "status" in box:
+                    box["status"].update(label="Something went wrong", state="error")
+                raise ApiError(data.get("message", "error"))
+        close_steps()
+
+    out["text"] = str(st.write_stream(tokens()) or "")
+    out["steps"] = list(out["steps"].values())
+    return out
+
+
+def apply_result(chat: dict, result: dict) -> None:
+    meta, done = result["meta"], result["done"]
+    if result["text"]:
+        chat["messages"].append(
+            {
+                "role": "assistant",
+                "content": result["text"],
+                "meta": meta,
+                "done": done,
+                "steps": result["steps"],
+                "elapsed": result["elapsed"],
+            }
+        )
+    approval = result["approval"]
+    # The steps that led to the question are shown with the permission prompt.
+    chat["pending"] = approval and {
+        **approval,
+        "steps": result["steps"],
+        "elapsed": result["elapsed"],
+    }
+    if done and done.get("stage"):
+        chat["stage"] = done["stage"]
+    if meta:
+        hints = (done or {}).get("hints_given", 0)
+        chat["can_show"] = bool(meta.get("can_show_answer")) or hints >= 1
+        chat["offer"] = bool(meta.get("offer_answer"))
+        if meta.get("mode") == "reveal":
+            chat["can_show"], chat["offer"] = False, False
+
+
+def run_turn(chat: dict, user_text: str | None, events) -> None:
     if user_text:
-        ss.messages.append({"role": "user", "content": user_text})
-        with st.chat_message("user"):
+        chat["messages"].append({"role": "user", "content": user_text})
+        with st.chat_message("user", avatar=AVATARS["user"]):
             st.markdown(user_text)
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         try:
-            text, meta, done, approval = run_stream(events())
+            result = stream_reply(events())
         except ApiError as exc:
             st.error(str(exc))
-            st.caption("Check that the API is running, then send your message again.")
+            st.caption("Check that the tutor is running, then send your message again.")
             if user_text:
-                ss.messages.pop()
+                chat["messages"].pop()
             return
-        render_meta(meta, done)
+        render_footer(result["meta"], result["done"])
+    apply_result(chat, result)
+    st.rerun()  # redraw the thread so only the latest reply carries Show answer
 
-    apply_result(text, meta, done, approval)
-    st.rerun()  # refresh the controls above the chat
+
+# ---------- page ----------
+
+
+def main() -> None:
+    st.set_page_config(page_title="CodeBuddy", page_icon=":material/school:")
+    init_state()
+    client = get_client()
+    health = client.health()
+    sidebar(client, health)
+
+    chat = current_chat()
+    learner = active_learner()
+    # The server binds a session to one learner; a chat from another memory setting is read-only.
+    stale = chat["learner"] is not None and chat["learner"] != learner
+
+    st.markdown("#### Let's work it out together")
+    stage_line(chat["stage"])
+    show_clicked = render_thread(chat, stale)
+    approve = decline = False
+    if chat["pending"]:
+        approve, decline = permission_prompt(chat["pending"])
+    if stale:
+        st.caption("Your memory setting changed, so your next message starts a new chat.")
+    code = code_box(chat)
+    prompt = transcript_box()
+    typed = read_chat_input(client, bool(health and health.get("stt_configured")))
+    prompt = prompt or typed
+
+    session_id = chat["session_id"]
+    who = {"learner_id": learner} if learner else {}
+    if approve or decline:
+        turn_id, remember = chat["pending"]["turn_id"], st.session_state.get("remember", True)
+        chat["pending"] = None
+        run_turn(chat, None, lambda: client.stream_approve(session_id, turn_id, approve, remember))
+    elif show_clicked:
+        run_turn(
+            chat,
+            "Show me the full answer.",
+            lambda: client.stream_show_answer(session_id, code or None, LANGUAGE, **who),
+        )
+    elif prompt:
+        if stale:
+            chat = start_new_chat(code)
+            session_id = chat["session_id"]
+        if learner:
+            chat["learner"] = learner
+        run_turn(
+            chat,
+            prompt,
+            lambda: client.stream_turn(session_id, prompt, code or None, LANGUAGE, **who),
+        )
 
 
 main()

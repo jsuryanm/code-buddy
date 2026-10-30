@@ -14,9 +14,9 @@ also load `.env` into the process environment (`load_dotenv`), so those librarie
 | `UPSTASH_REDIS_REST_URL` | `upstash-redis` | If both Upstash variables are set the API uses Upstash; otherwise an in-process cache and a warning |
 | `UPSTASH_REDIS_REST_TOKEN` | `upstash-redis` | |
 | `GROQ_API_KEY` | `groq` SDK | Enables voice input. Without it `/v1/stt` returns 503 and the UI hides the microphone |
-| `CODEBUDDY_API_KEY` | Streamlit UI | Key sent to the API when the server requires one (sidebar field overrides) |
+| `CODEBUDDY_API_KEY` | Streamlit UI | Key sent to the API when the server requires one. Unset means no key. Environment only; the UI has no field for it |
 | `MEM0_TELEMETRY` | `mem0` | Set to `False` by our code before mem0 is imported (`setdefault`), so mem0 sends no usage data. Set it yourself to `True` only if you want that |
-| `CODEBUDDY_API_URL` | Streamlit UI | Default `http://localhost:8000` (prefix kept for consistency; read by the UI, not by `Settings`) |
+| `CODEBUDDY_API_URL` | Streamlit UI | Default `http://localhost:8000`. Environment only; the UI has no field for it (prefix kept for consistency; read by the UI, not by `Settings`) |
 
 ## Settings (`CODEBUDDY_<NAME>`)
 
