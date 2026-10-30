@@ -1,3 +1,7 @@
+import asyncio
+import threading
+import time
+
 import pytest
 
 from codebuddy.config import Settings
@@ -136,6 +140,91 @@ async def test_mem0_forget_counts_then_deletes():
     assert stub.calls[1] == ("delete_all", {"user_id": "a"})
 
 
+class StoringMem0(StubMem0):
+    """Keeps added rows per user and fails if two calls ever run at once."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows: dict[str, list[dict]] = {}
+        self._busy = threading.Lock()
+
+    def _enter(self):
+        assert self._busy.acquire(blocking=False), "mem0 calls overlapped"
+        time.sleep(0.005)
+
+    def add(self, messages, **kwargs):
+        self._enter()
+        try:
+            self.rows.setdefault(kwargs["user_id"], []).append({"memory": str(messages)})
+            return super().add(messages, **kwargs)
+        finally:
+            self._busy.release()
+
+    def search(self, query, **kwargs):
+        self._enter()
+        try:
+            return super().search(query, **kwargs)
+        finally:
+            self._busy.release()
+
+    def get_all(self, **kwargs):
+        self._enter()
+        try:
+            super().get_all(**kwargs)
+            return {"results": list(self.rows.get(kwargs["filters"]["user_id"], []))}
+        finally:
+            self._busy.release()
+
+    def delete_all(self, **kwargs):
+        self._enter()
+        try:
+            self.rows.pop(kwargs["user_id"], None)
+            return super().delete_all(**kwargs)
+        finally:
+            self._busy.release()
+
+
+async def test_mem0_calls_never_overlap():
+    stub = StoringMem0()
+    mem = Mem0LearnerMemory(Settings(), memory=stub)
+    await asyncio.gather(
+        mem.remember("a", HISTORY, REVEALED),
+        mem.recall("a", "loops"),
+        mem.all("a"),
+        mem.remember("b", HISTORY, IN_PROGRESS),
+        mem.forget("b"),
+        mem.recall("b", "loops"),
+    )
+    assert len(stub.calls) == 9
+
+
+async def test_a_write_started_before_forget_finishes_before_the_delete():
+    stub = StoringMem0()
+    mem = Mem0LearnerMemory(Settings(), memory=stub)
+    write = asyncio.create_task(mem.remember("a", HISTORY, REVEALED))
+    await asyncio.sleep(0)  # the write is underway when forget is called
+    await mem.forget("a")
+    assert stub.rows.get("a") is None
+    await write
+    assert stub.rows.get("a") is None
+
+
+async def test_a_write_waiting_behind_forget_is_dropped():
+    stub = StoringMem0()
+    mem = Mem0LearnerMemory(Settings(), memory=stub)
+    async with mem._lock:  # a slow call (say a recall) holds the store
+        forget = asyncio.create_task(mem.forget("a"))
+        await asyncio.sleep(0.01)  # forget queues first
+        write = asyncio.create_task(mem.remember("a", HISTORY, IN_PROGRESS))
+        await asyncio.sleep(0.01)  # the write starts, then waits for the lock
+    assert await forget == 0
+    await write
+    assert stub.rows.get("a") is None
+    assert [c[0] for c in stub.calls] == ["get_all", "delete_all"]
+    await mem.remember("a", HISTORY, IN_PROGRESS)  # later writes still land
+    assert len(stub.rows["a"]) == 1
+
+
 def test_build_config_requires_model_fast():
     with pytest.raises(RuntimeError, match="CODEBUDDY_MODEL_FAST"):
         build_config(Settings(model_fast=None))
@@ -151,5 +240,6 @@ def test_build_config_is_valid_for_installed_mem0():
         "embedding_model_dims": 1536,
     }
     assert cfg["llm"] == {"provider": "openai", "config": {"model": "fast-model"}}
+    assert cfg["embedder"]["config"]["embedding_dims"] == 1536
     assert cfg["history_db_path"] == "data/mem/history.db"
     MemoryConfig(**cfg)  # validates keys without building clients

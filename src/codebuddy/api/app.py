@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Path, Request, UploadFile
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
@@ -47,10 +47,23 @@ log = logging.getLogger("codebuddy.api")
 
 SHOW_ANSWER_MESSAGE = "Show me the full answer."
 AUDIO_TYPES = ("audio/", "video/webm", "application/octet-stream")
+SHUTDOWN_DRAIN_S = 5.0  # how long shutdown waits for background work such as memory writes
 
 
 def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def drain_background(d: Deps) -> None:
+    """Let outstanding background tasks finish before resources close; cancel stragglers."""
+    if not d.background:
+        return
+    _, pending = await asyncio.wait(set(d.background), timeout=SHUTDOWN_DRAIN_S)
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+        log.warning("cancelled %d background task(s) at shutdown", len(pending))
 
 
 def create_app(
@@ -72,10 +85,12 @@ def create_app(
             try:
                 _install(app, res.deps, res.cache_kind, res.speech, res.judge, res.checkpointer)
                 yield
+                await drain_background(res.deps)
             finally:
                 await res.stack.aclose()
         else:
             yield
+            await drain_background(app.state.deps)
 
     app = FastAPI(title="CodeBuddy", version="0.2.0", lifespan=lifespan)
     app.state.background = set()  # keeps references to fire-and-forget tasks
@@ -126,11 +141,13 @@ def create_app(
 
     async def turn_learner(session_id: str, token: str | None, key: str | None) -> str | None:
         """The verified learner id for a turn (None without memory). Checked before streaming."""
-        if not (token and current().memory):
+        if not current().memory:
             return None
-        learner_id = verified_learner(token, key)
+        learner_id = verified_learner(token, key) if token else None
         bound = (await current().sessions.load(session_id)).learner_id
-        if bound and not secrets.compare_digest(bound.encode(), learner_id.encode()):
+        if bound and not (
+            learner_id and secrets.compare_digest(bound.encode(), learner_id.encode())
+        ):
             raise HTTPException(409, "This session belongs to another learner")
         return learner_id
 
@@ -302,7 +319,8 @@ def create_app(
 
     # -- learner memory (privacy) ----------------------------------------------------
 
-    LearnerToken = Path(pattern=LEARNER_TOKEN)
+    # The token travels in a header so it stays out of request paths and access logs.
+    LearnerToken = Header(alias="X-Learner-Token", pattern=LEARNER_TOKEN)
 
     def memory_store() -> LearnerMemory:
         if (memory := current().memory) is None:
@@ -314,7 +332,7 @@ def create_app(
         memory_store()
         return {"learner_token": app.state.tokens.issue(key)}
 
-    @app.get("/v1/memory/{learner_token}")
+    @app.get("/v1/memory")
     async def memory_list(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
         memory = memory_store()
         items = await memory.all(verified_learner(learner_token, key))
@@ -324,7 +342,7 @@ def create_app(
             ]
         }
 
-    @app.delete("/v1/memory/{learner_token}")
+    @app.delete("/v1/memory")
     async def memory_forget(learner_token: str = LearnerToken, key: str | None = Depends(guard)):
         memory = memory_store()
         return {"deleted": await memory.forget(verified_learner(learner_token, key))}

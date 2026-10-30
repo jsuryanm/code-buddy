@@ -130,7 +130,7 @@ def test_memories_and_forget_call_the_memory_routes():
     token = "a" * 22 + "." + "b" * 43
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append((request.method, request.url.path))
+        seen.append((request.method, request.url.path, request.headers.get("x-learner-token")))
         if request.method == "POST":
             return httpx.Response(200, json={"learner_token": token})
         if request.method == "GET":
@@ -142,9 +142,9 @@ def test_memories_and_forget_call_the_memory_routes():
     assert client.memories(token) == [{"kind": "semantic", "text": "x"}]
     assert client.forget(token) == 3
     assert seen == [
-        ("POST", "/v1/memory/learners"),
-        ("GET", f"/v1/memory/{token}"),
-        ("DELETE", f"/v1/memory/{token}"),
+        ("POST", "/v1/memory/learners", None),
+        ("GET", "/v1/memory", token),  # the token never appears in a path (access logs)
+        ("DELETE", "/v1/memory", token),
     ]
 
 

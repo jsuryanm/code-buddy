@@ -42,6 +42,13 @@ Writes happen in `update_state`, after the reply, as a background task:
 
 A turn is never slowed by a write. A failed write is logged and counted as `memory_failures`.
 
+Every mem0 call (recall, write, list, forget) runs under one lock, because the embedded Qdrant
+store is not safe for concurrent use. A recall that waits behind a slow write can hit
+`CODEBUDDY_MEMORY_RECALL_TIMEOUT_S`; that turn then proceeds with no memory and counts a
+`memory_failures`. The lock also orders writes against Forget me: a write that started before
+Forget finishes before the delete, and a write still waiting for the lock when Forget runs is
+dropped. On shutdown the API waits up to 5 seconds for pending writes, then cancels them.
+
 Cost: every write calls OpenAI. A hint write is one extraction call on the fast model plus
 embeddings; a reveal adds the procedural summary call and one more embedding. Recall embeds the
 learner's message on each memory-enabled turn. Chat calls use `CODEBUDDY_MODEL_FAST`; embeddings
@@ -57,8 +64,8 @@ use `CODEBUDDY_EMBED_MODEL`.
    link contains a saved learner profile. Use it only if you created it." and waits for **Use
    this profile**. A link alone never turns memory on or sends the token.
 4. While memory is on, the expander **What I remember about you** lists every stored item by
-   kind (`GET /v1/memory/<token>`).
-5. **Forget me** deletes every item for that learner (`DELETE /v1/memory/<token>`), shows how
+   kind (`GET /v1/memory` with the token in header `X-Learner-Token`).
+5. **Forget me** deletes every item for that learner (`DELETE /v1/memory`, same header), shows how
    many were removed, and turns the opt-in off.
 
 Without the box ticked, no token is sent and no memory is read or written.
@@ -72,8 +79,11 @@ receives only the verified id.
 
 - A bad or foreign token returns HTTP 403 `Invalid learner token`, before any memory is touched.
 - A session belongs to the first learner who uses it with memory. Another learner on the same
-  session gets HTTP 409 `This session belongs to another learner`. If the two checks race, the
-  graph skips memory for the learner that did not bind the session.
+  session gets HTTP 409 `This session belongs to another learner`, and so does a turn or
+  show-answer on that session sent without a token. If the two checks race, the graph skips
+  memory for the learner that did not bind the session.
+- When a session binds, its earlier history is cleared, so turns made before binding (by anyone)
+  are never written into the learner's memory.
 - With `CODEBUDDY_MEMORY_SECRET` empty the server warns at startup and uses a random secret per
   process, so every token stops working after a restart. Set a long random value to keep them.
 - Rotating the secret invalidates every token. The stored data under the old ids then cannot be
@@ -122,8 +132,10 @@ without OpenAI. Nothing it stores survives a restart.
   when keys are on, can read or delete that learner's notes.
 - With `CODEBUDDY_API_KEYS` empty, tokens are bound to no key, so any client holding a token can
   use it. Acceptable only for local use or the demo.
-- Session IDs are chosen by the client. Binding stops one learner from poisoning another's memory
-  but not a nuisance attack: someone who binds a session ID that another learner later reuses
+- Session IDs are chosen by the client. Binding refuses turns on a bound session from another
+  learner or without a token, and clearing history on bind keeps earlier turns out, so a client
+  cannot write into a learner's memory through a session it does not hold the token for. It does
+  not stop a nuisance attack: someone who binds a session ID that another learner later reuses
   makes that learner get 409.
 - `CODEBUDDY_MEMORY_SECRET` is a plain string setting, like `CODEBUDDY_API_KEYS`, and appears in a
   `repr` of `Settings`.

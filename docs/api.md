@@ -14,8 +14,8 @@ OpenAPI docs are served at `/docs`.
 | `POST /v1/stt` | Upload recorded audio (multipart field `audio`); returns `{"text", "provider"}` |
 | `GET /v1/session/{id}` | `{"stage", "hints_given", "reveals", "can_show_answer", "run_permission"}` |
 | `POST /v1/memory/learners` | Mint a signed learner token for opt-in memory. Returns `{"learner_token"}`. 503 when memory is off |
-| `GET /v1/memory/{learner_token}` | List what is remembered: `{"items": [{"kind", "text", "created_at"}]}` |
-| `DELETE /v1/memory/{learner_token}` | Forget everything for that learner: `{"deleted": n}` |
+| `GET /v1/memory` | List what is remembered for the learner in header `X-Learner-Token`: `{"items": [{"kind", "text", "created_at"}]}` |
+| `DELETE /v1/memory` | Forget everything for the learner in header `X-Learner-Token`: `{"deleted": n}` |
 | `GET /v1/metrics` | Counters: turns, cache hits, guard stops, degraded replies, approvals, STT use, judge results, rate-limited requests, memory recalls, writes, and failures |
 
 When `CODEBUDDY_API_KEYS` is set every `/v1/*` route needs `Authorization: Bearer <key>` or
@@ -40,8 +40,8 @@ choice; sessions expire after 2 hours without activity (`TTL_SESSION`).
 `learner_id` is the signed token, not a raw ID. Send it only for a learner who opted in to memory.
 It is checked before the stream starts and ignored when memory is off. A malformed token returns
 422; a well-formed token that is not valid for this server, secret, and API key returns 403
-(`Invalid learner token`); a session already bound to a different learner returns 409 (`This
-session belongs to another learner`). `POST /v1/show-answer` takes the same field and errors.
+(`Invalid learner token`); a session already bound to a different learner, or a request without
+`learner_id` on a bound session, returns 409 (`This session belongs to another learner`). `POST /v1/show-answer` takes the same field and errors.
 
 ### `POST /v1/approve`
 
@@ -58,9 +58,12 @@ expired (15 minutes), or belongs to another session. The response is a normal ev
 
 ```bash
 curl -X POST localhost:8000/v1/memory/learners          # {"learner_token": "<id>.<signature>"}
-curl localhost:8000/v1/memory/<token>                    # list
-curl -X DELETE localhost:8000/v1/memory/<token>          # forget
+curl -H "X-Learner-Token: <token>" localhost:8000/v1/memory             # list
+curl -X DELETE -H "X-Learner-Token: <token>" localhost:8000/v1/memory   # forget
 ```
+
+The token goes in a header, not the path, so it stays out of access logs. A missing or malformed
+`X-Learner-Token` returns 422.
 
 All three need the API key when keys are on, and the token is bound to the key that minted it.
 The three routes return 503 when `CODEBUDDY_MEMORY_ENABLED` is off or the store failed to start,

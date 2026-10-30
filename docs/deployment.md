@@ -18,12 +18,13 @@ no cloud credentials were used. Treat the files as a starting point and test the
 cp env.example .env           # fill in keys and model IDs
 docker compose up --build -d
 # one-off ingestion against the Qdrant server (stop nothing; server mode allows concurrent access)
-docker compose run --rm api python -m codebuddy.rag.ingest /app/data/raw/think_python.md --corpus fundamentals
+docker compose run --rm api python -m codebuddy.rag.ingest /app/data/raw/thinkpython.pdf --corpus fundamentals
 curl localhost:8000/healthz
 ```
 
 Mount your documents (for example add `./data/raw:/app/data/raw:ro` to the `api` service) before
-ingesting. Compose sets `CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload
+ingesting. PDFs need Docling, which the image leaves out: add `--extra pdf` to the `uv sync` lines
+in the `Dockerfile` first (Markdown, text, and HTML ingest without it). Compose sets `CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload
 indexes) that the embedded mode cannot exercise, so test it.
 
 ## Production checklist

@@ -130,6 +130,10 @@ FORGED = "a" * 22 + "." + "b" * 43
 KEY = {"Authorization": "Bearer key-a"}
 
 
+def tok(token: str) -> dict[str, str]:
+    return {"X-Learner-Token": token}
+
+
 class SpyMemory(InMemoryLearnerMemory):
     def __init__(self):
         super().__init__()
@@ -169,11 +173,11 @@ async def test_memory_endpoints_round_trip(make_harness):
         memory._items[token.split(".")[0]] = [
             MemoryItem(MemoryKind.SEMANTIC, "Struggles with off by one loop bounds")
         ]
-        got = await client.get(f"/v1/memory/{token}")
+        got = await client.get("/v1/memory", headers=tok(token))
         item = got.json()["items"][0]
         assert item["kind"] == "semantic" and "off by one" in item["text"] and "created_at" in item
-        assert (await client.delete(f"/v1/memory/{token}")).json() == {"deleted": 1}
-        assert (await client.get(f"/v1/memory/{token}")).json() == {"items": []}
+        assert (await client.delete("/v1/memory", headers=tok(token))).json() == {"deleted": 1}
+        assert (await client.get("/v1/memory", headers=tok(token))).json() == {"items": []}
         assert (await client.get("/healthz")).json()["memory_enabled"] is True
 
 
@@ -182,15 +186,17 @@ async def test_client_chosen_ids_are_refused(make_harness):
     h = make_harness(memory=memory)
     async with client_for(h) as client:
         for old in ("short", "bad!id", LEARNER, "x" * 16):
-            assert (await client.get(f"/v1/memory/{old}")).status_code == 422
-            assert (await client.delete(f"/v1/memory/{old}")).status_code == 422
+            assert (await client.get("/v1/memory", headers=tok(old))).status_code == 422
+            assert (await client.delete("/v1/memory", headers=tok(old))).status_code == 422
             bad = await client.post(
                 "/v1/turn", json={"session_id": "a", "message": "hi", "learner_id": old}
             )
             assert bad.status_code == 422
         for call in (client.get, client.delete):
-            r = await call(f"/v1/memory/{FORGED}")
+            r = await call("/v1/memory", headers=tok(FORGED))
             assert r.status_code == 403 and r.json()["detail"] == "Invalid learner token"
+            assert (await call("/v1/memory")).status_code == 422  # no token header
+            assert (await call(f"/v1/memory/{FORGED}")).status_code in (404, 405)  # not in paths
         turn = await client.post(
             "/v1/turn", json={"session_id": "a", "message": "hi", "learner_id": FORGED}
         )
@@ -207,11 +213,13 @@ async def test_token_minted_under_one_key_fails_under_another(make_harness):
     async with client_for(h, api_keys="key-a,key-b") as client:
         assert (await client.post("/v1/memory/learners")).status_code == 401
         token = await new_token(client, KEY)
-        assert (await client.get(f"/v1/memory/{token}", headers=KEY)).status_code == 200
+        assert (await client.get("/v1/memory", headers={**KEY, **tok(token)})).status_code == 200
         other = {"Authorization": "Bearer key-b"}
-        assert (await client.get(f"/v1/memory/{token}", headers=other)).status_code == 403
-        assert (await client.delete(f"/v1/memory/{token}", headers=other)).status_code == 403
-        assert (await client.get(f"/v1/memory/{token}")).status_code == 401
+        assert (await client.get("/v1/memory", headers={**other, **tok(token)})).status_code == 403
+        assert (
+            await client.delete("/v1/memory", headers={**other, **tok(token)})
+        ).status_code == 403
+        assert (await client.get("/v1/memory", headers=tok(token))).status_code == 401
     assert memory.touched == [token.split(".")[0]]
 
 
@@ -220,10 +228,10 @@ async def test_secret_setting_makes_tokens_survive_a_restart(make_harness, caplo
     async with client_for(h, memory_secret="s" * 32) as client:
         token = await new_token(client)
     async with client_for(h) as client:  # same secret, new process
-        assert (await client.get(f"/v1/memory/{token}")).status_code == 200
+        assert (await client.get("/v1/memory", headers=tok(token))).status_code == 200
     caplog.clear()
     async with client_for(h, memory_secret="") as client:  # random per-process secret
-        assert (await client.get(f"/v1/memory/{token}")).status_code == 403
+        assert (await client.get("/v1/memory", headers=tok(token))).status_code == 403
     assert "CODEBUDDY_MEMORY_SECRET" in caplog.text
 
 
@@ -275,20 +283,64 @@ async def test_a_session_used_without_memory_binds_once(make_harness):
         a = await new_token(client)
         body = {"session_id": "s1", "message": "and a list?", "learner_id": a}
         assert (await client.post("/v1/turn", json=body)).status_code == 200
-        assert (await h.deps.sessions.load("s1")).learner_id == a.split(".")[0]
+        progress = await h.deps.sessions.load("s1")
+        assert progress.learner_id == a.split(".")[0]
+        learner_turns = [t["text"] for t in progress.history if t["role"] == "learner"]
+        assert learner_turns == ["and a list?"]  # turns before binding never reach memory
+
+
+async def test_a_bound_session_refuses_turns_without_a_token(make_harness):
+    memory = InMemoryLearnerMemory()
+    h = make_harness(memory=memory)
+    async with client_for(h, memory_write_every=1) as client:
+        a = await new_token(client)
+        body = {"session_id": "s1", "message": "what is a loop", "learner_id": a}
+        assert (await client.post("/v1/turn", json=body)).status_code == 200
+        await drain(h)
+        before = await memory.all(a.split(".")[0])
+        for path, body in (
+            ("/v1/turn", {"message": "show me the answer", "code": BUGGY}),
+            ("/v1/show-answer", {"code": BUGGY}),
+        ):
+            r = await client.post(path, json={"session_id": "s1", **body})
+            assert r.status_code == 409
+            assert r.json()["detail"] == "This session belongs to another learner"
+        await drain(h)
+    assert await memory.all(a.split(".")[0]) == before
 
 
 async def test_memory_endpoints_when_disabled_or_unauthenticated(make_harness):
     h = make_harness()
     async with client_for(h) as client:
         for call in (client.get, client.delete):
-            r = await call(f"/v1/memory/{FORGED}")
+            r = await call("/v1/memory", headers=tok(FORGED))
             assert r.status_code == 503 and "not enabled" in r.json()["detail"]
         assert (await client.post("/v1/memory/learners")).status_code == 503
         assert (await client.get("/healthz")).json()["memory_enabled"] is False
     h = make_harness(memory=InMemoryLearnerMemory())
     async with client_for(h, api_keys="key-a") as client:
-        assert (await client.get(f"/v1/memory/{FORGED}")).status_code == 401
-        assert (await client.delete(f"/v1/memory/{FORGED}")).status_code == 401
+        assert (await client.get("/v1/memory", headers=tok(FORGED))).status_code == 401
+        assert (await client.delete("/v1/memory", headers=tok(FORGED))).status_code == 401
         token = await new_token(client, KEY)
-        assert (await client.get(f"/v1/memory/{token}", headers=KEY)).status_code == 200
+        assert (await client.get("/v1/memory", headers={**KEY, **tok(token)})).status_code == 200
+
+
+async def test_shutdown_waits_for_background_writes(make_harness, monkeypatch, caplog):
+    h = make_harness(memory=InMemoryLearnerMemory())
+    app = create_app(h.deps)
+    finished = []
+
+    async def slow_write():
+        await asyncio.sleep(0.05)
+        finished.append(True)
+
+    async with app.router.lifespan_context(app):
+        h.deps.spawn(slow_write())
+    assert finished == [True]
+
+    monkeypatch.setattr("codebuddy.api.app.SHUTDOWN_DRAIN_S", 0.01)
+    stuck = asyncio.Event()
+    async with app.router.lifespan_context(app):
+        h.deps.spawn(stuck.wait())
+    assert not h.deps.background
+    assert "cancelled 1 background task(s)" in caplog.text

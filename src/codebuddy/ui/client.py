@@ -78,9 +78,10 @@ class TutorClient:
             payload["learner_id"] = learner_id
         return self._stream("/v1/show-answer", payload)
 
-    def _memory_call(self, method: str, path: str) -> dict:
+    def _memory_call(self, method: str, path: str, learner_token: str | None = None) -> dict:
+        headers = {"X-Learner-Token": learner_token} if learner_token else {}
         try:
-            resp = self._http.request(method, f"/v1/memory/{path}")
+            resp = self._http.request(method, f"/v1/memory{path}", headers=headers)
         except httpx.HTTPError as exc:
             raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
         if resp.status_code != 200:
@@ -94,13 +95,13 @@ class TutorClient:
 
     def new_learner(self) -> str:
         """Ask the server for a signed learner token (ids are never made client-side)."""
-        return self._memory_call("POST", "learners")["learner_token"]
+        return self._memory_call("POST", "/learners")["learner_token"]
 
     def memories(self, learner_token: str) -> list[dict]:
-        return self._memory_call("GET", learner_token)["items"]
+        return self._memory_call("GET", "", learner_token)["items"]
 
     def forget(self, learner_token: str) -> int:
-        return self._memory_call("DELETE", learner_token)["deleted"]
+        return self._memory_call("DELETE", "", learner_token)["deleted"]
 
     def stream_approve(
         self, session_id: str, turn_id: str, approve: bool, remember: bool = True

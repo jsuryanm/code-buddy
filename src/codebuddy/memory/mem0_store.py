@@ -5,12 +5,17 @@ Notes on the installed mem0 (2.2.x):
 - Procedural memory is only created when `agent_id` is passed. It is also given `user_id`, so
   the learner's `user_id` filter finds and deletes it with the rest.
 - `delete_all` returns no count, so `forget` counts with `get_all` first.
+
+Every mem0 call runs under one lock: the embedded Qdrant store is not safe for concurrent use,
+and it orders a background write against Forget. A per-learner epoch, bumped by `forget`, drops
+writes that were still waiting for the lock when the learner asked to be forgotten.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -39,7 +44,13 @@ def build_config(settings: Settings) -> dict[str, Any]:
             },
         },
         "llm": {"provider": "openai", "config": {"model": settings.model_fast}},
-        "embedder": {"provider": "openai", "config": {"model": settings.embed_model}},
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "model": settings.embed_model,
+                "embedding_dims": settings.memory_embedding_dims,
+            },
+        },
         "history_db_path": str(Path(settings.memory_path) / "history.db"),
     }
 
@@ -62,6 +73,8 @@ class Mem0LearnerMemory:
     def __init__(self, settings: Settings, memory: Any = None) -> None:
         self._settings = settings
         self._memory = memory
+        self._lock = asyncio.Lock()
+        self._epochs: dict[str, int] = {}
 
     def _mem(self) -> Any:
         if self._memory is None:
@@ -70,24 +83,41 @@ class Mem0LearnerMemory:
             self._memory = Memory.from_config(build_config(self._settings))
         return self._memory
 
+    async def _locked(self, fn: Callable[[], Any]) -> Any:
+        """Run `fn` in a thread while holding the lock. Shielded, so a caller's timeout cannot
+        release the lock while the thread is still using the store."""
+
+        async def run() -> Any:
+            async with self._lock:
+                return await asyncio.to_thread(fn)
+
+        return await asyncio.shield(run())
+
     async def warm(self) -> None:
         """Build the mem0 instance off the event loop (opens Qdrant and the history DB)."""
-        await asyncio.to_thread(self._mem)
+        await self._locked(self._mem)
 
     async def recall(self, learner_id: str, query: str, limit: int = 5) -> list[MemoryItem]:
-        result = await asyncio.to_thread(
-            self._mem().search, query, filters={"user_id": learner_id}, top_k=limit
+        result = await self._locked(
+            lambda: self._mem().search(query, filters={"user_id": learner_id}, top_k=limit)
         )
         return [_item(r) for r in _rows(result)]
 
     async def remember(
         self, learner_id: str, history: list[dict[str, str]], episode: Episode
     ) -> None:
-        mem = self._mem()
+        epoch = self._epochs.get(learner_id, 0)  # taken before waiting for the lock
         messages = [{"role": ROLES[h["role"]], "content": h["text"]} for h in history]
-        await asyncio.to_thread(
-            mem.add, messages, user_id=learner_id, metadata={"kind": MemoryKind.SEMANTIC.value}
-        )
+
+        def write() -> None:
+            if self._epochs.get(learner_id, 0) == epoch:  # else forgotten while waiting
+                self._write(learner_id, messages, episode)
+
+        await self._locked(write)
+
+    def _write(self, learner_id: str, messages: list[dict], episode: Episode) -> None:
+        mem = self._mem()
+        mem.add(messages, user_id=learner_id, metadata={"kind": MemoryKind.SEMANTIC.value})
         if episode.outcome != "revealed":
             return
         meta = {
@@ -97,16 +127,14 @@ class Mem0LearnerMemory:
             "outcome": episode.outcome,
             "at": datetime.now(UTC).isoformat(),
         }
-        await asyncio.to_thread(
-            mem.add,
+        mem.add(
             episode.summary(),
             user_id=learner_id,
             run_id=episode.session_id,
             infer=False,
             metadata=meta,
         )
-        await asyncio.to_thread(
-            mem.add,
+        mem.add(
             messages,
             user_id=learner_id,
             agent_id=AGENT_ID,
@@ -114,13 +142,17 @@ class Mem0LearnerMemory:
             metadata={"kind": MemoryKind.PROCEDURAL.value},
         )
 
+    def _get_all(self, learner_id: str) -> list[dict]:
+        return _rows(self._mem().get_all(filters={"user_id": learner_id}, top_k=LIST_LIMIT))
+
     async def all(self, learner_id: str) -> list[MemoryItem]:
-        result = await asyncio.to_thread(
-            self._mem().get_all, filters={"user_id": learner_id}, top_k=LIST_LIMIT
-        )
-        return [_item(r) for r in _rows(result)]
+        return [_item(r) for r in await self._locked(lambda: self._get_all(learner_id))]
 
     async def forget(self, learner_id: str) -> int:
-        count = len(await self.all(learner_id))
-        await asyncio.to_thread(self._mem().delete_all, user_id=learner_id)
-        return count
+        def delete() -> int:
+            self._epochs[learner_id] = self._epochs.get(learner_id, 0) + 1
+            count = len(self._get_all(learner_id))
+            self._mem().delete_all(user_id=learner_id)
+            return count
+
+        return await self._locked(delete)

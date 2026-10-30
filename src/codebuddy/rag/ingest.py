@@ -1,8 +1,8 @@
 """Ingestion: load -> Markdown -> chunk -> embed -> idempotent upsert (spec 9.2).
 
 CLI:
-    uv run python -m codebuddy.rag.ingest data/raw/think_python.md \
-        --corpus fundamentals --title "Think Python" --licence "CC BY-NC-SA 3.0"
+    uv run python -m codebuddy.rag.ingest data/raw/thinkpython.pdf \
+        --corpus fundamentals --title "Think Python" --licence "CC BY-NC 3.0 Unported"
 """
 
 from __future__ import annotations

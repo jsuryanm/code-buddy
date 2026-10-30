@@ -61,19 +61,27 @@ question and gives up.
 
 ```mermaid
 flowchart LR
-    A[Learner message and code] --> B[Classify intent]
-    B --> C[Policy picks mode]
-    C --> D[Retrieve and cite]
-    D --> E[LLM verbalizes]
-    E --> F[Leak guard on stream]
-    F --> G[Streamed reply]
+    A[Load session and analyze code] --> B{Answer cache hit?}
+    B -- yes --> U[Update session state]
+    B -- no --> C[Classify intent]
+    B -- no --> D[Retrieve passages]
+    B -- no --> M[Recall memory]
+    C --> R[Refine retrieval]
+    D --> R
+    M --> R
+    R --> P[Policy picks mode]
+    P --> T[Tools, after learner approval]
+    P --> G[LLM verbalizes, leak guard on stream]
+    T --> G
+    G --> U
 ```
 
-The API classifies the message and runs static analysis on any code. The pedagogy policy then
-chooses a mode (hint at a level, explain, or reveal) from session state, with no model call.
-The tutor retrieves course passages, asks the model to phrase a reply for that mode, and checks
-every token through the leak guard. Tools such as code tracing pause the turn until the learner
-approves.
+The API loads the session, runs static analysis on any code, and checks the answer cache. On a
+miss it classifies the message, retrieves course passages, and recalls the learner's memory (when
+opted in) in parallel, then refines the retrieval for short follow-ups. The pedagogy policy
+chooses a mode (hint at a level, explain, or reveal) from session state, with no model call. Tools
+such as code tracing pause the turn until the learner approves. The model then phrases a reply for
+that mode, every token passes through the leak guard, and the session state is updated.
 
 ## Tech stack
 
@@ -152,7 +160,7 @@ curl -N -X POST localhost:8000/v1/turn -H 'Content-Type: application/json' \
 The reply streams as Server-Sent Events (`meta`, `token`, `approval`, `done`). Because the code
 is runnable, this example pauses with an `approval` event until the learner answers through
 `/v1/approve`. Other endpoints:
-`/healthz`, `/v1/show-answer`, `/v1/approve`, `/v1/stt`, `/v1/session/{id}`, `/v1/memory/*`,
+`/healthz`, `/v1/show-answer`, `/v1/approve`, `/v1/stt`, `/v1/session/{id}`, `/v1/memory/learners`, `/v1/memory`,
 `/v1/metrics`. Details: [docs/api.md](docs/api.md).
 
 ## Project layout

@@ -92,6 +92,7 @@ class TutorNodes:
         if learner_id := state.get("learner_id"):
             if progress.learner_id is None:
                 progress.learner_id = learner_id  # the API refuses other learners from now on
+                progress.history = []  # turns made before binding never reach this memory
             elif progress.learner_id != learner_id:  # lost a race with the API check
                 log.warning("session is bound to another learner; memory is off for this turn")
                 update["learner_id"] = None

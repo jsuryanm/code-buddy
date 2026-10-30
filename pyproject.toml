@@ -8,6 +8,7 @@ dependencies = [
   "uvicorn",
   "httpx",
   "pydantic-settings",
+  "python-dotenv",
   "langchain[mcp]>=1.4,<1.5",
   "langgraph",
   "langchain-openai",
