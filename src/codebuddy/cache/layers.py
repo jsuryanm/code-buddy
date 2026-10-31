@@ -130,3 +130,13 @@ class SessionStore:
         await self._cache.set(
             keys.session_key(progress.session_id), progress.model_dump_json(), self._ttl
         )
+
+    async def bind(self, session_id: str, learner_id: str, ttl: int) -> str:
+        """Claim the session for `learner_id` unless someone holds it. Returns the owner."""
+        while not await self._cache.set_nx(keys.bind_key(session_id), learner_id, ttl):
+            if (owner := await self.owner(session_id)) is not None:
+                return owner  # else the claim expired in between: try again
+        return learner_id
+
+    async def owner(self, session_id: str) -> str | None:
+        return await self._cache.get(keys.bind_key(session_id))

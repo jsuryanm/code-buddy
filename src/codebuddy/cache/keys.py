@@ -49,6 +49,11 @@ def session_key(session_id: str) -> str:
     return f"{PREFIX}:sess:{session_id}"
 
 
+def bind_key(session_id: str) -> str:
+    """Which learner claimed the session first; set once, atomically."""
+    return f"{PREFIX}:bind:{session_id}"
+
+
 FORGOT_TTL = 30 * 24 * 60 * 60  # outlives any session that still holds turns from before Forget
 
 

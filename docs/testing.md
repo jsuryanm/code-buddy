@@ -24,14 +24,14 @@ uv run python -m codebuddy.eval.run --json
 | `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals |
 | `tests/unit/test_guard.py` | Leak guard: prose passes, code and fences blocked, streaming behavior |
 | `tests/unit/test_code_analysis.py` | The five bug patterns and false positives |
-| `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, cacheability rule |
+| `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, session bind (first learner wins), cacheability rule |
 | `tests/unit/test_rag.py` | Chunking, ingestion idempotence, hybrid retrieval, corpus access, filters |
 | `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request |
 | `tests/unit/test_sandbox.py` | Real subprocess runs: traces, errors with line numbers, infinite loops, recursion, output cap, thirteen refused code patterns |
 | `tests/unit/test_tools.py` | Tool functions, permission rules, and a **real MCP stdio server** called through `langchain.mcp` |
 | `tests/unit/test_sandbox_backend.py` | The `SandboxBackend` seam: default `local` backend and its result keys, unknown names, `trace_python` uses the configured backend, allowlist runs before it |
-| `tests/unit/test_memory.py` | Memory kinds in the fake and in `Mem0LearnerMemory` (against a recording stub), exact mem0 call arguments, recall shapes, forget count, and `build_config` accepted by mem0's `MemoryConfig` |
-| `tests/unit/test_learner_tokens.py` | Token issue and verify: round trip, tampering, binding to the minting API key, and `MEMORY_WRITE_EVERY` must be at least 1 |
+| `tests/unit/test_memory.py` | Memory kinds in the fake and in `Mem0LearnerMemory` (against a recording stub), exact mem0 call arguments, recall shapes, exact forget count past the 1000-row list limit, and `build_config` accepted by mem0's `MemoryConfig` |
+| `tests/unit/test_learner_tokens.py` | Token issue and verify: round trip, tampering, binding to the minting API key, `MEMORY_WRITE_EVERY` must be at least 1, and the secret hidden from `repr` |
 | `tests/unit/test_wiring_memory.py` | `build_memory`: builds nothing when disabled, returns a warmed mem0 store, and logs and continues without memory when warm-up fails |
 | `tests/unit/test_judge.py` | Sampled leak judge: counting, rate, never judging reveals, failures ignored |
 | `tests/integration/test_graph.py` | Full graph: ladder, guard, reveal, outage, caching, history, citations |
@@ -41,7 +41,7 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; query rewriting for short follow-ups only |
 | `tests/integration/test_ui_smoke.py` | Streamlit page with a stub client |
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
-| `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409 and the graph backstop), list and forget endpoints |
+| `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409, concurrent first turns, and the graph backstop), the session status route on a bound session, list and forget endpoints |
 | `tests/integration/test_ui_memory.py` | Opt-in box, token minting, **Use this profile** for links, Forget me, mint failures |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 

@@ -102,7 +102,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 |---|---|---|
 | `MEMORY_ENABLED` | `false` | Turn on opt-in long-term learner memory. Needs `OPENAI_API_KEY` and `MODEL_FAST`. See [memory.md](memory.md) |
 | `MEMORY_PATH` | `data/memory` | Embedded Qdrant data and `history.db`. Single process only |
-| `MEMORY_SECRET` | empty | Signs learner tokens. Empty: a random secret per process with a startup warning, so tokens stop working after a restart. Changing it invalidates every token |
+| `MEMORY_SECRET` | empty | Signs learner tokens. Empty: a random secret per process with a startup warning, so tokens stop working after a restart. Changing it invalidates every token. Held as a secret value, so a `repr` of `Settings` hides it |
 | `MEMORY_RECALL_LIMIT` | `5` | Notes put into a prompt |
 | `MEMORY_RECALL_TIMEOUT_S` | `0.6` | Recall is abandoned after this, and the turn goes on without notes |
 | `MEMORY_WRITE_EVERY` | `4` | Write on every Nth hint (minimum 1); a reveal always writes |

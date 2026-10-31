@@ -7,7 +7,7 @@ no cloud credentials were used. Treat the files as a starting point and test the
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | One image, API by default. Python 3.12 slim, dependencies via `uv sync --frozen`, non-root user, `/healthz` health check |
+| `Dockerfile` | One image, API by default. Python 3.12 slim, dependencies via `uv sync --frozen $EXTRAS` (build arg, default `--extra ui`), non-root user, `/healthz` health check |
 | `docker-compose.yml` | Qdrant server, API, and Streamlit UI. Secrets come from `.env` |
 | `.dockerignore` | Keeps `.env`, data, tests, docs, and tooling out of the image |
 | `.github/workflows/ci.yml` | Ruff, format check, pytest, and the offline eval on every push and pull request |
@@ -23,9 +23,20 @@ curl localhost:8000/healthz
 ```
 
 Mount your documents (for example add `./data/raw:/app/data/raw:ro` to the `api` service) before
-ingesting. PDFs need Docling, which the image leaves out: add `--extra pdf` to the `uv sync` lines
-in the `Dockerfile` first (Markdown, text, and HTML ingest without it). Compose sets `CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload
-indexes) that the embedded mode cannot exercise, so test it.
+ingesting. Markdown, text, and HTML ingest with the default image. PDFs need Docling, which the
+default image leaves out because it pulls in PyTorch (several GB). Build an ingestion image with
+the `pdf` extra, ingest, then rebuild the slim one:
+
+```bash
+docker compose build --build-arg EXTRAS="--extra ui --extra pdf" api
+docker compose run --rm -e CUDA_VISIBLE_DEVICES= api python -m codebuddy.rag.ingest /app/data/raw/thinkpython.pdf --corpus fundamentals
+docker compose build api      # back to the slim default
+```
+
+The empty `CUDA_VISIBLE_DEVICES=` keeps Docling's PyTorch off the GPU probe that crashes on WSL
+(see [setup.md](setup.md)). Neither image has been built here. Compose sets
+`CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload indexes) that the embedded
+mode cannot exercise, so test it.
 
 ## Production checklist
 

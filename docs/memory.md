@@ -87,8 +87,13 @@ receives only the verified id.
 - A bad or foreign token returns HTTP 403 `Invalid learner token`, before any memory is touched.
 - A session belongs to the first learner who uses it with memory. Another learner on the same
   session gets HTTP 409 `This session belongs to another learner`, and so does a turn or
-  show-answer on that session sent without a token. If the two checks race, the graph skips
-  memory for the learner that did not bind the session.
+  show-answer on that session sent without a token. The first turn claims the session with an
+  atomic set-if-absent in the session cache (key `cb:bind:<session>`, lifetime `TTL_SESSION`), so
+  two first turns from different learners cannot both bind: one gets 409. The graph still skips
+  memory for a learner the session is not bound to, as a safety net.
+- `GET /v1/session/{id}` on a bound session needs the same learner's token in header
+  `X-Learner-Token`: none or another learner's is 409, an invalid one 403. Unbound sessions answer
+  without it.
 - When a session binds, its earlier history is cleared, so turns made before binding (by anyone)
   are never written into the learner's memory.
 - With `CODEBUDDY_MEMORY_SECRET` empty the server warns at startup and uses a random secret per
@@ -144,11 +149,9 @@ without OpenAI. Nothing it stores survives a restart.
   cannot write into a learner's memory through a session it does not hold the token for. It does
   not stop a nuisance attack: someone who binds a session ID that another learner later reuses
   makes that learner get 409.
-- `CODEBUDDY_MEMORY_SECRET` is a plain string setting, like `CODEBUDDY_API_KEYS`, and appears in a
-  `repr` of `Settings`.
 - Retention is manual. Items stay until the learner presses Forget me or you delete
-  `data/memory`. `forget` counts items first (up to 1000) and then deletes all of them, so the
-  reported count is capped at 1000 for a learner with more.
+  `data/memory`. `forget` deletes items by id in batches of 1000 until none are left, counting
+  each one, then sweeps with mem0's `delete_all`, so the reported count is exact.
 - Notes are personal data stored on this server and sent to OpenAI for extraction; see
   [security.md](security.md).
 

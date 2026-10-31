@@ -4,7 +4,8 @@ Notes on the installed mem0 (2.2.x):
 - `search` and `get_all` take ids in `filters=`; top-level `user_id` raises.
 - Procedural memory is only created when `agent_id` is passed. It is also given `user_id`, so
   the learner's `user_id` filter finds and deletes it with the rest.
-- `delete_all` returns no count, so `forget` counts with `get_all` first.
+- `delete_all` returns no count and `get_all` returns at most `top_k` rows, so `forget` deletes
+  in batches by id and counts as it goes, then sweeps with `delete_all`.
 
 Every mem0 call runs under one lock: the embedded Qdrant store is not safe for concurrent use,
 and it orders a background write against Forget. A per-learner epoch, bumped by `forget`, drops
@@ -27,7 +28,7 @@ os.environ.setdefault("MEM0_TELEMETRY", "False")  # read once when mem0 is first
 
 AGENT_ID = "codebuddy-tutor"
 COLLECTION = "codebuddy_memory"
-LIST_LIMIT = 1000  # get_all defaults to 20
+LIST_LIMIT = 1000  # get_all defaults to 20; also the batch size for forget
 ROLES = {"learner": "user", "tutor": "assistant"}
 
 
@@ -161,8 +162,12 @@ class Mem0LearnerMemory:
     async def forget(self, learner_id: str) -> int:
         def delete() -> int:
             self._epochs[learner_id] = self._epochs.get(learner_id, 0) + 1
-            count = len(self._get_all(learner_id))
-            self._mem().delete_all(user_id=learner_id)
+            count = 0
+            while batch := self._get_all(learner_id):
+                for row in batch:
+                    self._mem().delete(row["id"])
+                count += len(batch)
+            self._mem().delete_all(user_id=learner_id)  # final sweep (say, expired items)
             return count
 
         return await self._locked(delete)

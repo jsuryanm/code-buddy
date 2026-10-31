@@ -11,13 +11,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Extras to install. The default stays slim; add PDF ingestion (docling pulls in PyTorch,
+# several GB) with --build-arg EXTRAS="--extra ui --extra pdf".
+ARG EXTRAS="--extra ui"
+
 # Dependencies first so this layer is cached until pyproject.toml or uv.lock change.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --extra ui
+RUN uv sync --frozen --no-dev --no-install-project $EXTRAS
 
 COPY src ./src
 COPY data/sample ./data/sample
-RUN uv sync --frozen --no-dev --extra ui
+RUN uv sync --frozen --no-dev $EXTRAS
 
 # Run as a non-root user; only data/ is writable (index, checkpoints, manifest).
 RUN useradd --create-home --uid 10001 app && mkdir -p /app/data && chown -R app /app/data

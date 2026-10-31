@@ -73,11 +73,18 @@ class StubMem0:
 
     def get_all(self, **kwargs):
         self.calls.append(("get_all", kwargs))
-        return self.results
+        return {"results": self._rows()[: kwargs["top_k"]]}
+
+    def delete(self, memory_id):
+        self.calls.append(("delete", memory_id))
+        self.results = {"results": [r for r in self._rows() if r["id"] != memory_id]}
 
     def delete_all(self, **kwargs):
         self.calls.append(("delete_all", kwargs))
         return {"message": "Memories deleted successfully!"}
+
+    def _rows(self):
+        return self.results["results"] if isinstance(self.results, dict) else self.results
 
 
 async def test_mem0_remember_revealed_adds_three_memories():
@@ -135,9 +142,16 @@ async def test_mem0_recall_tolerates_both_result_shapes(shape):
 async def test_mem0_forget_counts_then_deletes():
     stub = StubMem0(results={"results": ROWS})
     assert await Mem0LearnerMemory(Settings(), memory=stub).forget("a") == 2
-    assert [c[0] for c in stub.calls] == ["get_all", "delete_all"]
+    assert [c[0] for c in stub.calls] == ["get_all", "delete", "delete", "get_all", "delete_all"]
     assert stub.calls[0][1]["filters"] == {"user_id": "a"}
-    assert stub.calls[1] == ("delete_all", {"user_id": "a"})
+    assert stub.calls[-1] == ("delete_all", {"user_id": "a"})
+
+
+async def test_mem0_forget_counts_every_item_past_the_list_limit():
+    stub = StubMem0(results={"results": [{"id": str(i), "memory": f"m{i}"} for i in range(2500)]})
+    assert await Mem0LearnerMemory(Settings(), memory=stub).forget("a") == 2500
+    assert stub.results == {"results": []}
+    assert [c[0] for c in stub.calls if c[0] != "delete"] == ["get_all"] * 4 + ["delete_all"]
 
 
 class StoringMem0(StubMem0):
@@ -155,7 +169,8 @@ class StoringMem0(StubMem0):
     def add(self, messages, **kwargs):
         self._enter()
         try:
-            self.rows.setdefault(kwargs["user_id"], []).append({"memory": str(messages)})
+            row = {"id": str(len(self.calls)), "memory": str(messages)}
+            self.rows.setdefault(kwargs["user_id"], []).append(row)
             return super().add(messages, **kwargs)
         finally:
             self._busy.release()
@@ -172,6 +187,15 @@ class StoringMem0(StubMem0):
         try:
             super().get_all(**kwargs)
             return {"results": list(self.rows.get(kwargs["filters"]["user_id"], []))}
+        finally:
+            self._busy.release()
+
+    def delete(self, memory_id):
+        self._enter()
+        try:
+            for rows in self.rows.values():
+                rows[:] = [r for r in rows if r["id"] != memory_id]
+            return super().delete(memory_id)
         finally:
             self._busy.release()
 
@@ -195,7 +219,7 @@ async def test_mem0_calls_never_overlap():
         mem.forget("b"),
         mem.recall("b", "loops"),
     )
-    assert len(stub.calls) == 9
+    assert len(stub.calls) == 11
 
 
 async def test_a_write_started_before_forget_finishes_before_the_delete():

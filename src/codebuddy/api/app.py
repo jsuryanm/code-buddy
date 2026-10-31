@@ -103,7 +103,7 @@ def create_app(
         app.state.pending = PendingApprovals(d.cache)
         app.state.tokens = None
         if d.memory:
-            secret = d.settings.memory_secret.encode()
+            secret = d.settings.memory_secret.get_secret_value().encode()
             if not secret:
                 log.warning(
                     "CODEBUDDY_MEMORY_SECRET is not set; using a random secret, so learner "
@@ -140,16 +140,27 @@ def create_app(
             raise HTTPException(403, "Invalid learner token")
         return learner_id
 
-    async def turn_learner(session_id: str, token: str | None, key: str | None) -> str | None:
-        """The verified learner id for a turn (None without memory). Checked before streaming."""
-        if not current().memory:
-            return None
-        learner_id = verified_learner(token, key) if token else None
-        bound = (await current().sessions.load(session_id)).learner_id
+    def refuse_other_learner(bound: str | None, learner_id: str | None) -> None:
         if bound and not (
             learner_id and secrets.compare_digest(bound.encode(), learner_id.encode())
         ):
             raise HTTPException(409, "This session belongs to another learner")
+
+    async def turn_learner(session_id: str, token: str | None, key: str | None) -> str | None:
+        """The verified learner id for a turn (None without memory). Checked before streaming.
+        The first learner claims the session atomically, so two first turns cannot both bind."""
+        d = current()
+        if not d.memory:
+            return None
+        learner_id = verified_learner(token, key) if token else None
+        bound = (await d.sessions.load(session_id)).learner_id  # outlives an expired claim
+        if not bound:
+            bound = (
+                await d.sessions.bind(session_id, learner_id, d.settings.ttl_session)
+                if learner_id
+                else await d.sessions.owner(session_id)
+            )
+        refuse_other_learner(bound, learner_id)
         return learner_id
 
     # -- health and metrics ----------------------------------------------------------
@@ -309,9 +320,22 @@ def create_app(
             raise HTTPException(502, "Transcription failed; please type your question") from exc
         return {"text": transcript.text, "provider": transcript.provider}
 
-    @app.get("/v1/session/{session_id}", dependencies=[Depends(guard)])
-    async def session(session_id: str):
-        progress = await current().sessions.load(session_id)
+    # The token travels in a header so it stays out of request paths and access logs.
+    LearnerToken = Header(alias="X-Learner-Token", pattern=LEARNER_TOKEN)
+    OptionalLearnerToken = Header(None, alias="X-Learner-Token", pattern=LEARNER_TOKEN)
+
+    @app.get("/v1/session/{session_id}")
+    async def session(
+        session_id: str,
+        learner_token: str | None = OptionalLearnerToken,
+        key: str | None = Depends(guard),
+    ):
+        d = current()
+        progress = await d.sessions.load(session_id)
+        if d.memory and (bound := progress.learner_id or await d.sessions.owner(session_id)):
+            refuse_other_learner(
+                bound, verified_learner(learner_token, key) if learner_token else None
+            )
         return {
             "stage": progress.stage.value,
             "hints_given": progress.hints_given,
@@ -321,9 +345,6 @@ def create_app(
         }
 
     # -- learner memory (privacy) ----------------------------------------------------
-
-    # The token travels in a header so it stays out of request paths and access logs.
-    LearnerToken = Header(alias="X-Learner-Token", pattern=LEARNER_TOKEN)
 
     def memory_store() -> LearnerMemory:
         if (memory := current().memory) is None:

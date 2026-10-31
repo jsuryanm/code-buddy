@@ -44,16 +44,20 @@ Off unless `CODEBUDDY_MEMORY_ENABLED=true`, and then only for a learner who tick
 - A session belongs to the first learner who uses it with memory. Session IDs are client-chosen, so
   a hostile client can bind an ID that another learner later reuses and cause a 409 for them. It
   cannot read or write the other learner's notes: a bound session refuses turns without the
-  matching token, and binding clears earlier history so it never reaches memory.
+  matching token, and binding clears earlier history so it never reaches memory. The first bind
+  is an atomic set-if-absent, so two concurrent first turns cannot both claim a session. The
+  session status route (`GET /v1/session/{id}`) also needs the matching token once bound.
 - With `CODEBUDDY_API_KEYS` empty a token is bound to no key, so anyone holding it can use it. Run
   memory without API keys only on localhost or in the demo.
 - If `CODEBUDDY_MEMORY_SECRET` is empty the server warns and uses a random per-process secret, so
-  tokens die on restart. Rotating the secret also strands the stored data.
+  tokens die on restart. Rotating the secret also strands the stored data. The setting is held as
+  a secret value and does not appear in a `repr` of `Settings`.
 - Recalled notes are untrusted data: they are placed in a `<memory>` block with `<memory>` tags
   stripped, and cannot change the hint level or bypass the leak guard.
 - The list and forget routes take the token in header `X-Learner-Token`, never in the path, so
   it does not end up in access logs.
-- Retention is manual: Forget me (`DELETE /v1/memory`) or delete `data/memory`.
+- Retention is manual: Forget me (`DELETE /v1/memory`) or delete `data/memory`. Forget deletes
+  every item, however many, and reports the exact count.
 
 ## Prompt injection
 

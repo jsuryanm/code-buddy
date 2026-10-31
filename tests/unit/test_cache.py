@@ -122,3 +122,14 @@ async def test_retrieval_cache_and_session_store():
     p.hints_given = 2
     await s.save(p)
     assert (await s.load("abc")).hints_given == 2
+
+
+async def test_session_bind_keeps_the_first_learner():
+    clock = Clock()
+    s = SessionStore(InMemoryCache(clock), ttl=60)
+    assert await s.owner("abc") is None
+    assert await s.bind("abc", "learner-a", 100) == "learner-a"
+    assert await s.bind("abc", "learner-b", 100) == "learner-a"
+    assert await s.owner("abc") == "learner-a"
+    clock.now = 101
+    assert await s.owner("abc") is None

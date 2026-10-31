@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     memory_recall_limit: int = 5
     memory_recall_timeout_s: float = 0.6
     memory_write_every: int = Field(4, ge=1)
-    memory_secret: str = ""  # signs learner tokens; empty: random per process
+    memory_secret: SecretStr = SecretStr("")  # signs learner tokens; empty: random per process
 
     # API hardening
     api_keys: str = ""  # comma-separated; empty disables authentication

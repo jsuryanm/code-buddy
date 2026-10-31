@@ -39,3 +39,9 @@ def test_token_is_bound_to_the_api_key_that_minted_it():
 def test_write_every_must_be_positive():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, memory_write_every=0)
+
+
+def test_memory_secret_is_hidden_from_repr():
+    settings = Settings(_env_file=None, memory_secret="x" * 32)
+    assert "x" * 32 not in repr(settings)
+    assert settings.memory_secret.get_secret_value() == "x" * 32

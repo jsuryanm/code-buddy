@@ -1,6 +1,7 @@
 import asyncio
 
 import httpx
+from pydantic import SecretStr
 
 from codebuddy.api.app import create_app
 from codebuddy.memory.store import InMemoryLearnerMemory
@@ -225,12 +226,12 @@ async def test_token_minted_under_one_key_fails_under_another(make_harness):
 
 async def test_secret_setting_makes_tokens_survive_a_restart(make_harness, caplog):
     h = make_harness(memory=InMemoryLearnerMemory())
-    async with client_for(h, memory_secret="s" * 32) as client:
+    async with client_for(h, memory_secret=SecretStr("s" * 32)) as client:
         token = await new_token(client)
     async with client_for(h) as client:  # same secret, new process
         assert (await client.get("/v1/memory", headers=tok(token))).status_code == 200
     caplog.clear()
-    async with client_for(h, memory_secret="") as client:  # random per-process secret
+    async with client_for(h, memory_secret=SecretStr("")) as client:  # random per-process secret
         assert (await client.get("/v1/memory", headers=tok(token))).status_code == 403
     assert "CODEBUDDY_MEMORY_SECRET" in caplog.text
 
@@ -307,6 +308,50 @@ async def test_a_bound_session_refuses_turns_without_a_token(make_harness):
             assert r.json()["detail"] == "This session belongs to another learner"
         await drain(h)
     assert await memory.all(a.split(".")[0]) == before
+
+
+async def test_concurrent_first_turns_bind_the_session_once(make_harness):
+    memory = InMemoryLearnerMemory()
+    h = make_harness(memory=memory)
+    async with client_for(h, memory_write_every=1) as client:
+        a, b = await new_token(client), await new_token(client)
+        body = {"session_id": "s1", "message": "why is my loop wrong", "code": BUGGY}
+        first, second = await asyncio.gather(
+            client.post("/v1/turn", json={**body, "learner_id": a}),
+            client.post("/v1/turn", json={**body, "learner_id": b}),
+        )
+        await drain(h)
+    assert sorted((first.status_code, second.status_code)) == [200, 409]
+    winner, loser = (a, b) if first.status_code == 200 else (b, a)
+    assert (await h.deps.sessions.load("s1")).learner_id == winner.split(".")[0]
+    assert await memory.all(winner.split(".")[0])
+    assert await memory.all(loser.split(".")[0]) == []
+
+
+async def test_a_bind_key_alone_refuses_other_learners(make_harness):
+    h = make_harness(memory=InMemoryLearnerMemory())
+    async with client_for(h) as client:
+        a, b = await new_token(client), await new_token(client)
+        await h.deps.sessions.bind("s1", a.split(".")[0], 600)  # first turn still running
+        body = {"session_id": "s1", "message": "what is a loop"}
+        for extra in ({"learner_id": b}, {}):
+            r = await client.post("/v1/turn", json={**body, **extra})
+            assert r.status_code == 409
+        assert (await client.post("/v1/turn", json={**body, "learner_id": a})).status_code == 200
+
+
+async def test_session_status_of_a_bound_session_needs_its_learner(make_harness):
+    h = make_harness(memory=InMemoryLearnerMemory())
+    async with client_for(h) as client:
+        assert (await client.get("/v1/session/s1")).status_code == 200  # unbound: unchanged
+        a, b = await new_token(client), await new_token(client)
+        body = {"session_id": "s1", "message": "what is a loop", "learner_id": a}
+        assert (await client.post("/v1/turn", json=body)).status_code == 200
+        assert (await client.get("/v1/session/s1")).status_code == 409
+        assert (await client.get("/v1/session/s1", headers=tok(FORGED))).status_code == 403
+        assert (await client.get("/v1/session/s1", headers=tok(b))).status_code == 409
+        mine = await client.get("/v1/session/s1", headers=tok(a))
+        assert mine.status_code == 200 and mine.json()["stage"]
 
 
 async def test_memory_endpoints_when_disabled_or_unauthenticated(make_harness):
