@@ -52,6 +52,6 @@ def detect_signals(message: str, progress: SessionProgress, fixed: bool = False)
     return Signals(
         give_up_phrase=bool(_GIVE_UP.search(message)),
         repeated_submission=progress.repeated_submissions >= 2,
-        hints_without_progress=progress.hints_given >= 3,
+        hints_without_progress=progress.hints_given >= 2,  # offer the answer after 2 hints
         fixed=fixed,
     )

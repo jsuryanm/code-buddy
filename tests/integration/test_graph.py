@@ -42,13 +42,13 @@ async def test_leak_guard_replaces_code_with_a_safe_question(make_harness):
     assert out["state"]["guarded"] is True
 
 
-async def test_answer_is_offered_after_three_hints_but_hinting_continues(make_harness):
+async def test_answer_is_offered_after_two_hints_but_hinting_continues(make_harness):
     h = make_harness(standard=ScriptedChat([f"Hint {i}?" for i in range(6)]))
     # Different code each turn so the repeated-submission signal stays out of the way.
     metas = [(await h.turn("still stuck", code=BUGGY + f"# try {i}\n"))["meta"] for i in range(5)]
-    assert [m["offer_answer"] for m in metas] == [False, False, False, True, True]
-    assert metas[3]["level"] == 3 and metas[4]["level"] == 3  # never reveals on its own
-    assert metas[3]["can_show_answer"]
+    assert [m["offer_answer"] for m in metas] == [False, False, True, True, True]
+    assert [m["level"] for m in metas] == [0, 1, 2, 3, 3]  # never reveals on its own
+    assert metas[1]["can_show_answer"] and metas[2]["can_show_answer"]
 
 
 async def test_repeated_identical_submissions_offer_the_answer(make_harness):

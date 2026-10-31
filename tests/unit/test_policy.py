@@ -1,6 +1,7 @@
 import pytest
 
 from codebuddy.agent.code_analysis import analyze
+from codebuddy.config import Settings
 from codebuddy.pedagogy.frustration import Signals, asks_for_answer, detect_signals
 from codebuddy.pedagogy.policy import decide_mode, fixed_it
 from codebuddy.schemas import HintLevel, Intent, Mode, SessionProgress
@@ -33,8 +34,24 @@ def test_explicit_request_reveals_even_on_first_turn():
 
 
 def test_turn_cap_offers_answer():
-    d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=4), Signals(), now=0, max_turns=4)
+    d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=3), Signals(), now=0, max_turns=3)
     assert d.offer_answer and d.can_show_answer
+
+
+def test_ladder_turn_cap_defaults_to_three():
+    assert Settings().ladder_max_turns == 3
+    assert not decide_mode(
+        Intent.DEBUG_HELP, progress(hints_given=2), Signals(), now=0
+    ).offer_answer
+    assert decide_mode(Intent.DEBUG_HELP, progress(hints_given=3), Signals(), now=0).offer_answer
+
+
+@pytest.mark.parametrize("given,offered", [(0, False), (1, False), (2, True), (3, True)])
+def test_answer_is_offered_after_two_hints(given, offered):
+    signals = detect_signals("still stuck", progress(hints_given=given))
+    assert signals.hints_without_progress is offered
+    d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=given), signals, now=0)
+    assert d.offer_answer is offered and d.can_show_answer is (given >= 1)
 
 
 def test_time_cap_offers_answer():
@@ -69,7 +86,7 @@ def test_does_not_treat_ordinary_question_as_answer_request():
 
 
 def test_signals_from_progress_and_phrases():
-    s = detect_signals("I give up", progress(hints_given=3, repeated_submissions=2))
+    s = detect_signals("I give up", progress(hints_given=2, repeated_submissions=2))
     assert s.give_up_phrase and s.hints_without_progress and s.repeated_submission
     assert not detect_signals("hello", progress()).any
 

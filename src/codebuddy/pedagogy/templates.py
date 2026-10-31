@@ -69,22 +69,24 @@ STYLE_RULE = (
 )
 
 EARLY_HINT_RULE = (
-    "The private analysis and runtime facts are only for choosing your question: never state "
-    "the error type, its cause, or the failing input. Instead ask the learner to run or "
-    "trace a specific small input and say what they observe."
+    "Say briefly where the problem is (the line or step, using the learner's own names) and "
+    "what causes it, in plain words. For a runtime error you may name the error in plain "
+    "words with a short gloss (for example: an IndexError, which means the list has no item "
+    "at that position). Then ask ONE question that pushes the learner toward the fix. Never "
+    "write the corrected code or the exact fix."
 )
 
 ONE_QUESTION = "End with exactly one question."
 
 LEVEL_RULES: dict[HintLevel, str] = {
     HintLevel.DIAGNOSE: (
-        "Use at most 60 words. Ask one diagnostic question that makes the learner trace or "
-        "predict what their code does on a small input. Do not say where the bug is. No code "
-        "at all. " + EARLY_HINT_RULE + " " + ONE_QUESTION
+        "Use at most 60 words. Point to the line or step where things go wrong and say in one "
+        "sentence why. No code at all. " + EARLY_HINT_RULE + " " + ONE_QUESTION
     ),
     HintLevel.LOCATE: (
-        "Use at most 60 words. Narrow the learner's attention to the region of code or step "
-        "that matters, without naming the bug. No corrected code. "
+        "Use at most 60 words. Go one step further than before: narrow down to the specific "
+        "step or value that goes wrong and say why it goes wrong there. Nudge the learner on "
+        "what to change, as an idea, not as code. No corrected code. "
         + EARLY_HINT_RULE
         + " "
         + ONE_QUESTION

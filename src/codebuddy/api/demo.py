@@ -34,11 +34,15 @@ from codebuddy.tools.runner import LocalToolRunner
 SAMPLE = Path(__file__).parents[3] / "data" / "sample"
 
 HINTS = {
-    0: "Look at the last pass of your loop. What is the value of `i` then?",
-    1: "Check the line that starts the loop. How many items does your list have, "
-    "and what is the last valid index?",
+    0: "The crash happens on the last pass of your loop, at `total += nums[i]`. There `i` "
+    "is one past the end, so it asks for an item your list does not have (an IndexError). "
+    "What is the biggest `i` your loop line lets through?",
+    1: "Look at your loop line. Your list has 3 items, so the last valid index is 2, but "
+    "your `range` goes one step further. Think about what the stop value should be. "
+    "Which number should the loop stop before?",
     2: "This is an off-by-one error: `range(n)` stops before `n`, and indexes end at "
-    "n - 1 [1]. What does that say about your loop line?",
+    "n - 1 [1]. Trace it: i = 0, 1, 2 are fine, i = 3 is past the end. What does that say "
+    "about your loop line?",
     3: "Plan: start the total at zero, visit each valid index once, add the item. "
     "Which step of your loop breaks that plan?",
 }

@@ -19,10 +19,10 @@ class Settings(BaseSettings):
 
     # Versions folded into cache keys so stale answers invalidate automatically
     index_version: str = "v1"
-    prompt_version: str = "p3"
+    prompt_version: str = "p4"
 
     # Hint ladder escalation (spec 8.4)
-    ladder_max_turns: int = 4
+    ladder_max_turns: int = 3
     ladder_max_seconds: int = 600
 
     # Output token caps per reply mode: a backstop for the word limits in the prompts

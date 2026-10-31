@@ -1,19 +1,38 @@
 import pytest
 
 from codebuddy.config import Settings
-from codebuddy.pedagogy.templates import ERROR_TEMPLATE, STYLE_RULE, system_prompt
+from codebuddy.pedagogy.templates import (
+    EARLY_HINT_RULE,
+    ERROR_TEMPLATE,
+    LEVEL_RULES,
+    STYLE_RULE,
+    system_prompt,
+)
 from codebuddy.schemas import Decision, HintLevel, Mode, PcditStage
 
 
 @pytest.mark.parametrize("level", [HintLevel.DIAGNOSE, HintLevel.LOCATE])
-def test_early_hints_never_state_the_error_its_cause_or_the_failing_input(level):
+def test_early_hints_say_where_and_why_then_push_toward_the_fix(level):
     prompt = system_prompt(Decision(mode=Mode.HINT, level=level), PcditStage.I)
-    assert "never state the error type, its cause, or the failing input" in prompt
-    assert "run or trace a specific small input" in prompt
+    assert EARLY_HINT_RULE in prompt
+    assert "where the problem is" in EARLY_HINT_RULE and "what causes it" in EARLY_HINT_RULE
+    assert "ONE question that pushes the learner toward the fix" in EARLY_HINT_RULE
+    assert "Never write the corrected code or the exact fix" in EARLY_HINT_RULE
+    assert "never state the error type" not in prompt
+
+
+def test_hint_levels_add_depth_step_by_step():
+    rule = LEVEL_RULES.__getitem__
+    assert "line or step" in rule(HintLevel.DIAGNOSE)
+    assert "specific step or value" in rule(HintLevel.LOCATE)
+    assert "what to change" in rule(HintLevel.LOCATE)
+    assert "Name the concept" in rule(HintLevel.NAME_CONCEPT)
+    assert "pseudo-code" in rule(HintLevel.SCAFFOLD)
+    assert len({rule(level) for level in LIMITS}) == 4  # each level is its own step
 
 
 def test_prompt_version_was_bumped_with_the_prompt_change():
-    assert Settings().prompt_version == "p3"
+    assert Settings().prompt_version == "p4"
 
 
 LIMITS = {

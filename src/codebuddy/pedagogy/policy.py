@@ -38,7 +38,7 @@ def decide_mode(
     signals: Signals,
     now: float,
     *,
-    max_turns: int = 4,
+    max_turns: int = 3,
     max_seconds: int = 600,
 ) -> Decision:
     can_show = progress.hints_given >= 1
