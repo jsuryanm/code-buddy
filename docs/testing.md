@@ -21,7 +21,8 @@ uv run python -m codebuddy.eval.run --json
 
 | Path | Covers |
 |---|---|
-| `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals |
+| `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals, fix detection (`fixed_it`) and the `confirm` decision |
+| `tests/unit/test_quiz.py` | Quiz bank: 2/2/1 difficulty split per pattern, each snippet has exactly its bug and each solution none; grading, one hint then the solution, skip, stop, summary |
 | `tests/unit/test_guard.py` | Leak guard: prose passes, code and fences blocked, streaming behavior |
 | `tests/unit/test_code_analysis.py` | The five bug patterns and false positives |
 | `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, session bind (first learner wins), cacheability rule |
@@ -44,6 +45,8 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
 | `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409, concurrent first turns, and the graph backstop), the session status route on a bound session, list and forget endpoints |
 | `tests/integration/test_ui_memory.py` | Opt-in box, token minting, **Use this profile** for links, Forget me, mint failures |
+| `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; `/v1/quiz` (409 before a fix, no model call, API key), correct answers, the guarded quiz hint, skip, stop, and the summary |
+| `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 
 ## Fakes (no real models)
@@ -98,6 +101,7 @@ and `retrieval.jsonl` (queries with expected text).
 | `guard_trigger_rate` | Scripted leaky replies the guard stopped | 1.0 |
 | `pattern_recall` | Labeled bugs found by static analysis | 1.0 |
 | `escalation_ok` | Offer after three hints, never a reveal unasked | 1.0 |
+| `fix_detection` | Per pattern: "I fixed it" with unchanged code is a hint, the bank solution is a `confirm` | 1.0 |
 | `retrieval_recall` | Queries whose expected text is in the top results (sample corpus) | at least 0.75 |
 
 These measure the machinery with fake models. They do not rate the quality of a real model's

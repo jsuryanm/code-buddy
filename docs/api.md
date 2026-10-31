@@ -10,6 +10,7 @@ OpenAPI docs are served at `/docs`.
 | `GET /healthz` | Status, cache type, whether models and speech are configured, tool mode (`mcp`, `local`, `off`), sandbox network isolation, `memory_enabled`, whether a key is required. Always open |
 | `POST /v1/turn` | Send a learner message (optionally with code). Streams the reply as SSE |
 | `POST /v1/show-answer` | Learner asks for the full answer. Streams a reveal as SSE |
+| `POST /v1/quiz` | Start a five-question quiz on the bug the learner just fixed. Streams question 1 as SSE; no model call |
 | `POST /v1/approve` | Answer a permission request raised by a turn. Streams the rest of that turn |
 | `POST /v1/stt` | Upload recorded audio (multipart field `audio`); returns `{"text", "provider"}` |
 | `GET /v1/session/{id}` | `{"stage", "hints_given", "reveals", "can_show_answer", "run_permission"}`. With memory on and the session bound to a learner, send that learner's token in header `X-Learner-Token`: missing or another learner's token is 409, an invalid one 403. A malformed `X-Learner-Token` header returns 422 |
@@ -42,7 +43,7 @@ It is checked before the stream starts and ignored when memory is off. A malform
 422; a well-formed token that is not valid for this server, secret, and API key returns 403
 (`Invalid learner token`); a session already bound to a different learner, or a request without
 `learner_id` on a bound session, returns 409 (`This session belongs to another learner`).
-`POST /v1/show-answer` takes the same field and errors.
+`POST /v1/show-answer` and `POST /v1/quiz` take the same field and errors.
 
 ### `POST /v1/approve`
 
@@ -86,20 +87,48 @@ failed, 503 no provider configured. The text has spoken symbols fixed ("i plus p
 Equivalent to sending the message "Show me the full answer." The policy always honors it, even
 on the first turn, and resets the hint ladder afterwards.
 
+### `POST /v1/quiz`
+
+```json
+{ "session_id": "same id", "learner_id": "optional learner token" }
+```
+
+Available after a turn whose `meta` had `offer_quiz: true` (the tutor saw the learner fix a bug).
+Starts five questions on that bug, two easy, two medium, one hard, from a hand-checked bank, and
+streams question 1: a `meta` with `mode: "quiz"`, `quiz` and `quiz_code`, the question text as
+`token` events (the buggy snippet in a python fence, then "Find the bug, fix it in the code box,
+and send it."), and `done`. No model is called. HTTP 409 (`Nothing to quiz on yet: fix a bug
+first`) before any fix; the API key, rate limit, and learner binding apply as for a turn.
+
+Answers are ordinary `POST /v1/turn` calls with the fixed code in `code`. A correct answer streams
+"Correct." and the next question in the same reply; a first wrong try gets one level-0 hint; a
+second wrong try, or a message with "skip", shows the stored solution and moves on; "stop quiz"
+ends it. After question 5 the reply is a summary such as "you got 4 of 5". See
+[pedagogy-policy.md](pedagogy-policy.md#quiz-after-a-fix).
+
 ## Streaming response
 
 Content type `text/event-stream`. Each event has an `event:` name and one JSON `data:` line.
 
 | Event | When | Data |
 |---|---|---|
-| `meta` | Once, before the first token | `mode` (`hint`, `explain`, `reveal`, `redirect`), `level` (0 to 4 or null), `stage` (P, C, D, I, T), `can_show_answer`, `offer_answer`, `cached` |
+| `meta` | Once, before the first token | `mode` (`hint`, `explain`, `reveal`, `redirect`, `confirm`, `quiz`), `level` (0 to 4 or null), `stage` (P, C, D, I, T), `can_show_answer`, `offer_answer`, `offer_quiz`, `quiz_concept`, `quiz`, `quiz_code`, `cached` |
 | `step` | Many, before the first token (parallel steps can interleave) | `key`, `label`, `status` (`running` or `done`), `detail` (or null). Progress text for the learner; never contains bug names, errors, findings, or code |
 | `token` | Many | `{"text": "..."}` text already approved by the leak guard |
 | `approval` | When the tutor needs permission to run the learner's code (no tokens come before it) | `turn_id`, `tool`, `message`, `code` (preview) |
 | `done` | Once, last | `turn_id`, `awaiting_approval`, `citations[]`, `degraded`, `guarded`, `cache_hit`, `stage`, `hints_given`, `ttft_ms`, `total_ms` |
 | `error` | On an unexpected failure | `{"message": "..."}` |
 
-The UI labels a hint "Hint N" where N is `level + 1`, so level 0 shows as "Hint 1". After a
+The UI labels a hint "Hint N" where N is `level + 1`, so level 0 shows as "Hint 1".
+
+`confirm` means the tutor saw the learner fix their bug; it comes with `offer_quiz: true` and
+`quiz_concept`, the concept name of the fixed bug (for example "loop bounds", never an internal
+pattern id). `quiz` mode is a reply written by code: a quiz question, a grade with the next
+question, a shown solution, a summary, or "Quiz stopped". While a quiz runs, `quiz` is
+`{"index", "total": 5, "difficulty", "score"}` for the question now on screen (`index` counts from
+0, so the UI shows `index + 1`), and `can_show_answer` is false; otherwise `quiz` is null. A quiz
+hint is `mode: "hint"`, `level: 0` with `quiz` set. `quiz_code` is the snippet of a new question,
+for the code box, and null on every other reply. After a
 declined approval the resumed `/v1/approve` stream has no `run_tools` step; it goes straight to
 `generate`.
 
@@ -118,7 +147,7 @@ curl -N -X POST localhost:8000/v1/turn \
 
 ```
 event: meta
-data: {"type": "meta", "mode": "hint", "level": 0, "stage": "T", "can_show_answer": false, "offer_answer": false, "cached": false}
+data: {"type": "meta", "mode": "hint", "level": 0, "stage": "T", "can_show_answer": false, "offer_answer": false, "offer_quiz": false, "quiz_concept": null, "quiz": null, "quiz_code": null, "cached": false}
 
 event: token
 data: {"text": "What "}

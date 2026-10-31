@@ -32,6 +32,7 @@ question and gives up.
 **Tutoring**
 - Hint ladder, error explanations, and PCDIT stage tracking per session
 - Frustration detection that moves the answer within reach
+- Fix detection from the code, then an optional five-question quiz on the same bug, easy to hard
 
 **Knowledge**
 - Hybrid retrieval (dense plus BM25) over Qdrant, with source citations

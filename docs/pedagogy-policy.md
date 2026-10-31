@@ -13,6 +13,7 @@ decides when to reveal, and cannot emit corrected code at levels 0 to 3 (the gua
 | Intent (from classifier) | Mode | Level | Notes |
 |---|---|---|---|
 | `show_answer` | `reveal` | 4 | Always honored, even on the first turn |
+| any but `problem_start`, when `signals.fixed` | `confirm` | none | The learner fixed the bug (see below); offers a quiz |
 | `off_topic` | `redirect` | none | Two-sentence polite redirect on the fast tier |
 | `concept_question` | `explain` | none | Direct explanation, no hint ladder; cacheable (L1) |
 | `debug_help`, `problem_start` | `hint` | `min(hints_given, 3)` | Walks the ladder; never reaches 4 on its own |
@@ -81,14 +82,62 @@ Explicit requests are matched by `asks_for_answer()`, for example "show me the a
 |---|---|
 | Hint turn | `hints_given += 1`; `started_at` set on the first hint |
 | Reveal | `reveals += 1`; `hints_given = 0`; `started_at = 0`; repeated submissions reset |
+| Fix confirmed | `hints_given = 0`; `started_at = 0`; repeated submissions reset; `quiz_offer` set to the fixed pattern |
+| Code sent that parses (not a quiz answer) | `last_patterns` becomes its bug patterns, the yardstick for the next fix |
 | Classifier says `problem_start` | Ladder restarts (`hints_given = 0`, `started_at = 0`) |
 | Learner answers the run-my-code prompt | `run_permission` becomes `allow` or `deny` (if "remember" was chosen) |
 | Every turn | Stage updated from the classifier; last 6 messages kept (500 chars each) |
 
-Known gap: the tutor does not detect that a learner solved the problem. The ladder resets only on
-a reveal, a classified new problem, session expiry (2 hours idle), or a new session. If a
-learner finishes one problem and moves on without saying so, the next question may start at a
-higher hint level. The UI's **New chat** button is the manual reset.
+## Fix detection
+
+`fixed_it(progress, features, code_changed, runtime)` in `pedagogy/policy.py` decides from the
+code alone whether the learner fixed their bug. It is true when the last code they sent had bug
+patterns (`progress.last_patterns`), this code is different (its normalized hash changed), it
+parses, none of those patterns remain, and a trace that ran this turn did not fail. A message
+such as "I fixed it" or "it works now" with the same code is not enough. A syntax error in between
+does not lose the yardstick: code that fails to parse leaves `last_patterns` as it was.
+
+Tools run after the policy, so in the current graph no trace has run yet when `fixed_it` is
+called; the runtime check covers a runtime result when one is present and is tested on its own.
+
+A fix sets `Signals.fixed` (not a frustration signal), and `decide_mode` returns `confirm` after
+the explicit-reveal check. A turn classified as `problem_start` is a new problem, not a fix. The
+`confirm` prompt (`CONFIRM_RULE`) asks for at most 60 plain words: say what the change fixed using
+the learner's own code, ask them to say in one sentence why it works, and mention that a quiz is
+available. It writes no new code; the model gets a private note naming the fixed symptom. The
+reply runs on the standard tier with the hint token cap, and the leak guard is off because the
+learner's own fixed code is not a leak. The ladder resets, which closes the old gap where a solved
+problem left the next question at a high hint level. `meta` carries `offer_quiz: true` and
+`quiz_concept`, the concept name (for example "loop bounds"), never the pattern id.
+
+## Quiz after a fix
+
+`POST /v1/quiz` starts a set of five questions on the bug pattern just fixed
+(`progress.quiz_offer`); 409 when there is nothing to quiz on. The questions come from a
+hand-written bank in `pedagogy/quiz.py`, not from the model: five snippets per pattern, in rising
+difficulty (two easy, two medium, one hard). Easy is a short, obvious version; medium hides the
+bug in a slightly longer function; hard puts it in a nested loop or a helper. Each entry stores its
+`solution`. A test asserts every snippet parses and `analyze()` finds exactly its pattern, and
+every solution parses with no pattern. Starting a quiz makes no model call, resets the ladder, and
+clears `last_patterns` so quiz code never counts as a fix of the learner's own bug.
+
+`progress.quiz` holds `{"pattern", "index" (0 to 4), "score", "results", "tries"}`. While it is
+set, each turn is graded by `advance()` before the normal policy:
+
+| Turn | Result |
+|---|---|
+| Code that parses with the pattern gone | "Correct.", score + 1, and the next question in the same reply (no extra button) |
+| First wrong try (pattern still there, or a syntax error) | One hint from the model: the normal level-0 hint prompt, leak guard on |
+| Second wrong try, "skip", or an explicit request for the answer | The stored solution, written by code; the question is marked wrong and the next one follows |
+| "stop quiz" (also "skip/end/quit the quiz") | The quiz ends with the score so far |
+| A message without code | Not a quiz answer: the tutor replies as usual and the quiz waits |
+| Answer to question 5 | A summary, "4 of 5"; if any were wrong, one sentence naming the difficulties to review. The quiz is cleared |
+
+Showing a quiz solution is a reveal from code, from the bank's stored `solution`, so the guard is
+not involved. There is no ladder inside a quiz: quiz turns never change `hints_given`, run no tools,
+skip the answer cache, and write nothing to learner memory. Show answer is hidden while a quiz
+runs. `meta` carries `quiz: {"index", "total", "difficulty", "score"}` while one is active, and
+`quiz_code`, the snippet of a new question, so the UI can put it into the code box.
 
 ## Leak guard rules (`pedagogy/guard.py`)
 

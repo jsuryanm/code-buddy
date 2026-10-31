@@ -11,8 +11,10 @@ src/codebuddy/
   llm.py               OpenAI tiers via LangChain (fast, standard, heavy) with fallbacks; embeddings
   metrics.py           Cache-backed counters served at /v1/metrics
   pedagogy/
-    policy.py          decide_mode(): pure function, picks hint level / explain / reveal / redirect
-    frustration.py     show-answer request and frustration signal detection
+    policy.py          decide_mode(): pure function, picks hint level / explain / reveal / redirect /
+                       confirm; fixed_it(): fix detection from the code alone
+    frustration.py     show-answer request, frustration signals, quiz skip and stop phrases
+    quiz.py            Five-question quiz bank per bug pattern (easy to hard) and its grading; no model
     templates.py       system and user prompts per mode; PCDIT question banks; fallback text
     guard.py           StreamGuard: blocks corrected code in the token stream at hint levels 0-3
     judge.py           Sampled LLM check for leaks written in prose (runs after the reply)
@@ -52,7 +54,7 @@ src/codebuddy/
     manifest.py        What was ingested, SHA-256, licence
     fakes.py           HashSparse and ScriptedChat for tests, evals, and demo
   api/
-    app.py             FastAPI app: SSE streaming, approvals, speech, memory endpoints, metrics, TTFT logging
+    app.py             FastAPI app: SSE streaming, approvals, quiz start, speech, memory endpoints, metrics, TTFT logging
     security.py        API keys, rate limiting, pending-approval ownership, LearnerTokens
     wiring.py          Builds production resources (cache, models, MCP, checkpointer, STT, judge, memory); loads .env
     demo.py            Keyless demo app (scripted tutor, real sandbox, canned transcript)
@@ -98,12 +100,12 @@ flowchart LR
 | `retrieve` | Hybrid search over the `fundamentals` corpus with `build_query()`: the message plus concepts and search terms of detected bug patterns and names of built-ins the code calls, never the code itself. Runs in parallel with `classify` | `rag/retrieve.py`, `rag/query.py` |
 | `recall_memory` | Only when memory is on and the turn has a verified learner token: searches that learner's notes with the message, under a timeout (`MEMORY_RECALL_TIMEOUT_S`). Errors and timeouts give no notes. Runs in parallel with `classify` and `retrieve` | `agent/nodes.py` |
 | `refine_retrieval` | Retrieves again with the classifier's standalone `search_query` and concepts when that query differs from the first, then merges both lists by reciprocal rank fusion. Skipped for foreign turns. See [rag-and-ingestion.md](rag-and-ingestion.md#query-building-and-fusion) | `agent/nodes.py`, `rag/query.py` |
-| `policy` | `decide_mode()` with intent, progress, frustration signals, and the clock; also plans which tools to use | `pedagogy/policy.py` |
+| `policy` | While a quiz runs, grades the answer first (`quiz.advance()`): a reply written by code, or one level-0 hint. Otherwise `fixed_it()` sets the fixed signal and `decide_mode()` runs with intent, progress, signals, and the clock. Also plans which tools to use (none during a quiz) | `pedagogy/policy.py`, `pedagogy/quiz.py` |
 | `route_tools` | Maps the learner's stored permission to run, ask, or skip | `tools/policy.py` |
 | `approve_run` | Pauses with `interrupt()` until the learner approves or declines running their code | `agent/nodes.py` |
 | `run_tools` | Calls the planned tools through the tool runner (MCP or in-process) with a timeout | `agent/nodes.py` |
-| `generate` | Builds prompts (including private notes from analysis, runtime facts, case ideas, and recalled memory in a `<memory>` block), streams the chosen tier through `StreamGuard`, handles guard stops and model outages | `agent/nodes.py` |
-| `update_state` | Advances the ladder, appends history, saves progress, starts a background memory write on a reveal or every Nth hint, stores cacheable answers (and the semantic index entry), releases the lock, counts the turn | `agent/nodes.py` |
+| `generate` | Streams a quiz reply written by code without a model call. Otherwise builds prompts (including private notes from analysis, runtime facts, case ideas, and recalled memory in a `<memory>` block), streams the chosen tier through `StreamGuard`, handles guard stops and model outages | `agent/nodes.py` |
+| `update_state` | Advances the ladder (a reveal or a confirmed fix resets it; quiz turns leave it alone), remembers the bug patterns of the code sent, appends history, saves progress, starts a background memory write on a reveal or every Nth hint, stores cacheable answers (and the semantic index entry), releases the lock, counts the turn | `agent/nodes.py` |
 
 `classify`, `retrieve`, and `recall_memory` run in parallel and join before `refine_retrieval`, so
 the first retrieval does not wait for the classifier, and memory adds no time unless it hits its
@@ -117,14 +119,15 @@ one `final` event with the end state:
 
 | Event | Payload | Emitted by |
 |---|---|---|
-| `meta` | mode, hint level, stage, `can_show_answer`, `offer_answer`, `cached` | `generate`, `emit_cached` (before the first token) |
+| `meta` | mode, hint level, stage, `can_show_answer`, `offer_answer`, `offer_quiz`, `quiz_concept`, `quiz`, `quiz_code`, `cached` | `generate`, `emit_cached` (before the first token) |
 | `step` | `key`, `label`, `status` (`running`, `done`), `detail`; fixed learner-safe text from `agent/steps.py` | `analyze_code`, `check_cache`, `classify`, `retrieve`, `recall_memory`, `policy`, `run_tools`, `generate` |
 | `token` | `text` already approved by the leak guard | `generate`, `emit_cached` |
 | `final` | the complete graph state (not sent to clients as-is) | `run_turn` |
 
 `api/app.py` turns these into SSE events and adds timings (see [api.md](api.md)). A paused turn is
 detected after the stream ends (`run_turn` reads the checkpoint) and becomes an `approval` event;
-see [tools-and-approvals.md](tools-and-approvals.md).
+see [tools-and-approvals.md](tools-and-approvals.md). `POST /v1/quiz` does not run the graph: it
+starts the quiz in the session and streams question 1 itself, in the same event shape.
 
 ## The decision layer
 
@@ -236,5 +239,5 @@ Instructor features: corpus approval queue, learner reports (12.4 surface 3). Pe
 Langfuse tracing (17.4). Synthetic-question generation at ingestion (9.2). A hard sandbox
 boundary and deployment automation (17, see [security.md](security.md) and
 [deployment.md](deployment.md)). The L5 tool-result cache (10.3): tool runs depend on the learner's
-code and are not cached. Concept-mastery scores and solved detection for the learner model (8.6);
+code and are not cached. Concept-mastery scores and solved tracking across sessions for the learner model (8.6);
 memory keeps only private notes (see [memory.md](memory.md)).

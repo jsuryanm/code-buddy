@@ -189,14 +189,14 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and
 | Spec area | Status |
 |---|---|
 | RAG ingestion, hybrid retrieval, corpora split by collection (9) | Built. PDF parsing and the cross-encoder reranker are optional extras and untested on real files |
-| Pedagogy engine, hint ladder, anti-frustration (8) | Built, including the streaming guard and a sampled judge |
+| Pedagogy engine, hint ladder, anti-frustration (8) | Built, including the streaming guard, a sampled judge, fix detection from the code, and a five-question practice quiz after a fix (8.7) |
 | PCDIT stage tracking (7) | Stage tracked per turn from the classifier and shown in the UI. The digital worksheet panel and stage-aware error routing are not built |
 | Caching (10) | L1, L3, L4, L6 built; L2 semantic built but off by default; L5 not built (tool runs depend on the learner's code) |
 | LLM routing (11) | Built as in-app tiers with fallbacks; no gateway (ADR 0001) |
 | Agent, MCP, tools, human in the loop (12) | Three tools over MCP, rule-planned, learner approval before code runs, durable checkpoints (SQLite instead of Postgres). Instructor surfaces not built |
 | Speech-to-text (13) | Groq Whisper with optional OpenAI fallback behind `/v1/stt`; voice recording in the Streamlit chat input with an editable transcript. Utterances are whole recordings, not voice-activity-detected chunks |
 | Evaluation (16) | Offline eval and CI gate built. Human review, A/B tests, and the learner pilot are not |
-| Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved detection, Postgres persistence, and accounts are not built. See `docs/memory.md` |
+| Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved tracking across sessions, Postgres persistence, and accounts are not built. See `docs/memory.md` |
 | Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |
 | Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested). No Langfuse, accounts, or deployment automation |
 
@@ -370,6 +370,31 @@ Per-learner state (target design; stored in Redis for the session, persisted to 
 Used to pick question difficulty and to avoid re-explaining mastered concepts.
 
 ---
+
+### 8.7 Fix detection and practice quiz
+
+> **Built in v0.5.** Rules in code; the model only words the confirmation and the one quiz hint.
+
+**Fix detection.** The tutor decides from the code alone that the learner fixed their bug: the last
+code they sent had bug patterns from the static analysis, this code is different, it parses, none
+of those patterns remain, and a trace that ran this turn (if any) did not fail. Saying "I fixed it"
+is not enough. A fix gets a **confirm** turn (after the explicit-reveal check; a new problem is not
+a fix): at most 60 plain words that say what the change fixed using the learner's own code, ask
+them to explain in one sentence why it works (self-explanation, 8.1), and offer a quiz. No new code
+is written. The hint ladder resets, so a solved problem no longer leaves the next question at a
+high level.
+
+**Practice quiz.** On request, five questions on the same bug pattern in rising difficulty: two
+easy (short, obvious), two medium (the bug inside a slightly longer function), one hard (the bug in
+a nested loop or a helper). Snippets and their solutions are hand-written and verified by the
+static analysis in tests; no model generates quiz code, so there is no leak risk and no added
+latency. Each answer is graded from the code (parses, pattern gone). Correct: "Correct" and the
+next question in the same reply. Wrong: one guarded level-0 hint, then on a second wrong try, or on
+"skip" or a request for the answer, the stored solution is shown (a reveal from code, not from the
+model) and the quiz moves on. No hint ladder inside the quiz. After question 5 the learner sees the
+score ("4 of 5") and, if any were missed, which difficulty to review. Quiz turns do not change the
+ladder, run no tools, skip the answer cache, and write nothing to learner memory. See
+`docs/pedagogy-policy.md`.
 
 ## 9. RAG System
 

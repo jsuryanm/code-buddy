@@ -139,8 +139,9 @@ without OpenAI. Nothing it stores survives a restart.
 
 ## Limits
 
-- No solved detection. The only outcome the code can know is a reveal, so a learner who solves a
-  problem unaided produces only semantic notes.
+- No solved tracking. The tutor detects a fix within a session (see
+  [pedagogy-policy.md](pedagogy-policy.md#fix-detection)), but memory records only reveals, so a
+  learner who solves a problem unaided produces only semantic notes.
 - No accounts. The learner token is the identity, and it is bearer-like: it sits in the page URL
   (browser history, bookmarks, Referer, shoulder-surfing). Anyone with the token, plus the API key
   when keys are on, can read or delete that learner's notes.

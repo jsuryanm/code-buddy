@@ -48,7 +48,8 @@ Built and tested offline (268 tests, offline eval passing):
 Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
 (memory uses bearer-like learner tokens instead), Langfuse tracing, a hard sandbox boundary (needs
 a container or a remote sandbox adapter), LLM-written synthetic questions for ingestion,
-deployment automation, solved detection and concept mastery for the learner model.
+deployment automation, solved tracking across sessions and concept mastery for the learner model
+(fix detection within a session is built; see [pedagogy-policy.md](pedagogy-policy.md)).
 
 Run once for real: PDF ingestion with Docling and OpenAI embeddings, on the two PDFs in the
 corpus manifest.
