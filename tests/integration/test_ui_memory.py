@@ -155,6 +155,42 @@ def test_forget_me_deletes_and_clears_state():
     assert stub.turns == [None]
 
 
+def code_box(at: AppTest):
+    return at.text_area(key=f"code_{at.session_state['chat_id']}")
+
+
+def test_forget_me_keeps_the_code():
+    stub = Stub()
+    at = accepted(stub)
+    at.chat_input[0].set_value("hi").run()
+    code_box(at).set_value("print(1)").run()
+    at.button(key="forget_me").click().run()
+    assert not at.exception
+    assert code_box(at).value == "print(1)"
+
+
+def test_use_this_profile_keeps_the_code():
+    stub = Stub()
+    at = make_app(stub, {"learner": TOKEN})
+    at.chat_input[0].set_value("hi").run()
+    code_box(at).set_value("print(1)").run()
+    at.button(key="use_profile").click().run()
+    assert not at.exception
+    assert code_box(at).value == "print(1)"
+
+
+def test_turned_off_memory_has_its_own_sentence():
+    stub = Stub()
+
+    def off():
+        raise ApiError("API returned 503", status=503)
+
+    stub.new_learner = off
+    at = make_app(stub)
+    at.checkbox(key=BOX).check().run()
+    assert [e.value for e in at.sidebar.error] == ["Memory is turned off on the server."]
+
+
 def test_forget_failure_is_shown_not_raised():
     stub = Stub()
 

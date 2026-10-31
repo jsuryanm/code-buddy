@@ -36,15 +36,23 @@ ERRORS = {
     None: "Can't reach the tutor. Check that it is running.",
     401: "The tutor needs an API key. Set CODEBUDDY_API_KEY and restart the page.",
     403: "Your saved profile is no longer valid. Turn memory off and on again.",
+    404: "That request expired. Send your message again.",
     409: "This chat belongs to another memory setting, so a new chat was started. "
     "Send your message again.",
     429: "Too many requests. Wait a minute and try again.",
 }
+VOICE_ERRORS = {
+    503: "Voice input is off on this server.",
+    413: "That recording is too long.",
+    502: "Couldn't understand the recording.",
+}
+MEMORY_ERRORS = {503: "Memory is turned off on the server."}
 GENERIC_ERROR = "Something went wrong. Please try again."
 
 
-def error_text(exc: ApiError) -> str:
-    return ERRORS.get(exc.status, GENERIC_ERROR)
+def error_text(exc: ApiError, extra: dict | None = None) -> str:
+    """The sentence for a failed call; `extra` overrides ERRORS for one kind of call."""
+    return {**ERRORS, **(extra or {})}.get(exc.status, GENERIC_ERROR)
 
 
 def drop_invalid_profile() -> None:
@@ -66,6 +74,8 @@ def new_chat(code: str = "") -> dict:
         "pending": None,  # a turn waiting for permission to run the learner's code
         "code": code,
         "learner": None,  # the learner token this chat's session is bound to on the server
+        "transcript": None,  # what voice input heard, waiting to be edited and sent
+        "voice_note": None,  # why the last recording could not be transcribed
     }
 
 
@@ -146,7 +156,7 @@ def forget_me(client) -> None:
     try:
         ss["memory_note"] = f"{client.forget(token)} remembered items deleted."
     except ApiError as exc:
-        ss["memory_note"] = f"error: {error_text(exc)}"
+        ss["memory_note"] = f"error: {error_text(exc, MEMORY_ERRORS)}"
         if exc.status == 403:
             drop_invalid_profile()
         return
@@ -154,8 +164,9 @@ def forget_me(client) -> None:
     ss["learner_id"] = None
     ss[MEMORY_BOX] = False
     st.query_params.pop("learner", None)
+    code = current_chat()["code"]
     ss.chats = [c for c in ss.chats if c["learner"] != token]
-    start_new_chat()
+    start_new_chat(code)
 
 
 def enable_memory(client) -> None:
@@ -166,7 +177,7 @@ def enable_memory(client) -> None:
     try:
         ss["learner_id"] = client.new_learner()
     except ApiError as exc:
-        ss["memory_note"] = f"error: {error_text(exc)}"
+        ss["memory_note"] = f"error: {error_text(exc, MEMORY_ERRORS)}"
         ss[MEMORY_BOX] = False
         return
     st.query_params["learner"] = ss["learner_id"]
@@ -177,7 +188,7 @@ def use_profile() -> None:
     ss = st.session_state
     ss["learner_id"] = st.query_params["learner"]
     ss[MEMORY_BOX] = True
-    start_new_chat()  # a different learner: the server would refuse the old session
+    start_new_chat(current_chat()["code"])  # a different learner: the server refuses the old one
 
 
 def load_memories(client) -> None:
@@ -187,7 +198,7 @@ def load_memories(client) -> None:
     try:
         ss["memory_items"] = (token, client.memories(token))
     except ApiError as exc:
-        ss["memory_note"] = f"error: {error_text(exc)}"
+        ss["memory_note"] = f"error: {error_text(exc, MEMORY_ERRORS)}"
         if exc.status == 403:
             drop_invalid_profile()
 
@@ -372,14 +383,17 @@ def render_thread(chat: dict, stale: bool) -> bool:
     return clicked
 
 
-def permission_prompt(pending: dict) -> tuple[bool, bool]:
+def permission_prompt(chat: dict) -> tuple[bool, bool]:
     """The tutor will not run the learner's code without asking. Returns (approve, decline)."""
+    pending = chat["pending"]
     with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         render_steps(pending)
         st.markdown(f"**{pending['message']}**")
         st.caption("It runs in a restricted sandbox with no network and shows what happened.")
         st.code(pending.get("code", ""), language="python")
-        st.checkbox("Remember my choice for this chat", value=True, key="remember")
+        st.checkbox(
+            "Remember my choice for this chat", value=True, key=f"remember_{chat['session_id']}"
+        )
         left, right = st.columns(2)
         approve = left.button(
             "Run my code", key="approve_run", type="primary", icon=":material/play_arrow:"
@@ -407,48 +421,55 @@ def code_box(chat: dict) -> str:
 # ---------- voice ----------
 
 
-def transcribe(client, text: str, audio) -> None:
+def transcribe(client, chat: dict, text: str, audio) -> None:
     """A recording from the chat input becomes an editable transcript, never a sent message."""
-    ss = st.session_state
     try:
         heard = client.transcribe(audio.getvalue(), audio.name or "speech.wav", audio.type)
     except ApiError as exc:
-        ss["voice_note"] = f"{error_text(exc)} You can type your question instead."
+        chat["voice_note"] = f"{error_text(exc, VOICE_ERRORS)} You can type your question instead."
         return
-    ss.transcript = " ".join(part for part in (text, heard) if part)
-    ss.transcript_edit = ss.transcript
+    chat["transcript"] = " ".join(part for part in (text, heard) if part)
+    st.session_state.pop(f"transcript_{chat['session_id']}", None)  # show the new text
 
 
-def discard_transcript() -> None:
-    st.session_state.pop("transcript", None)
-    st.session_state.pop("transcript_edit", None)
+def discard_transcript(chat: dict) -> None:
+    chat["transcript"] = None
+    st.session_state.pop(f"transcript_{chat['session_id']}", None)
 
 
-def transcript_box() -> str | None:
-    """Show 'Heard: ...' for editing. Returns the text when the learner clicks Send."""
-    ss = st.session_state
-    if ss.get("voice_note"):
-        st.warning(ss.pop("voice_note"))
-    if not ss.get("transcript"):
+def transcript_box(chat: dict) -> str | None:
+    """Show 'Heard: ...' for editing. Returns the text when the learner clicks Send.
+
+    Each chat keeps its own transcript, so switching chats never carries one across.
+    """
+    if chat["voice_note"]:
+        st.warning(chat["voice_note"])
+        chat["voice_note"] = None
+    if not chat["transcript"]:
         return None
     with st.container(border=True):
-        st.text_area("Heard (edit before sending)", key="transcript_edit", height=80)
+        chat["transcript"] = st.text_area(
+            "Heard (edit before sending)",
+            value=chat["transcript"],
+            key=f"transcript_{chat['session_id']}",
+            height=80,
+        )
         left, right = st.columns(2)
         send = left.button("Send", key="send_transcript", type="primary", icon=":material/send:")
-        right.button("Discard", key="discard_transcript", on_click=discard_transcript)
+        right.button("Discard", key="discard_transcript", on_click=discard_transcript, args=(chat,))
     if not send:
         return None
-    text = (ss.get("transcript_edit") or "").strip()
-    discard_transcript()
+    text = (chat["transcript"] or "").strip()
+    discard_transcript(chat)
     return text or None
 
 
-def read_chat_input(client, voice: bool) -> str | None:
+def read_chat_input(client, chat: dict, voice: bool) -> str | None:
     value = st.chat_input("What are you stuck on?", accept_audio=voice)
     if value is None or isinstance(value, str):
         return value or None
     if value.audio is not None:
-        transcribe(client, value.text, value.audio)
+        transcribe(client, chat, value.text, value.audio)
         st.rerun()  # show the transcript box above the input
     return value.text or None
 
@@ -535,8 +556,13 @@ def apply_result(chat: dict, result: dict) -> None:
             chat["can_show"], chat["offer"] = False, False
 
 
-def run_turn(chat: dict, user_text: str | None, events, learner: str | None = None) -> None:
-    """Stream one turn. A turn sent with a learner token binds the chat to it once it succeeds."""
+def run_turn(
+    chat: dict, user_text: str | None, events, learner: str | None = None
+) -> ApiError | None:
+    """Stream one turn. A turn sent with a learner token binds the chat to it once it succeeds.
+
+    Returns the error when the call failed, so the caller can decide what to keep.
+    """
     if user_text:
         chat["messages"].append({"role": "user", "content": user_text})
         with st.chat_message("user", avatar=AVATARS["user"]):
@@ -554,7 +580,7 @@ def run_turn(chat: dict, user_text: str | None, events, learner: str | None = No
             if exc.status == 403:
                 drop_invalid_profile()
             st.error(error_text(exc))
-            return
+            return exc
         render_footer(result["meta"], result["done"])
     if learner and result["done"] is not None:
         chat["learner"] = learner
@@ -582,22 +608,32 @@ def main() -> None:
     show_clicked = render_thread(chat, stale)
     approve = decline = False
     if chat["pending"]:
-        approve, decline = permission_prompt(chat["pending"])
+        approve, decline = permission_prompt(chat)
     if stale:
         st.caption("Your memory setting changed, so your next message starts a new chat.")
     if st.session_state.get("turn_note"):
         st.info(st.session_state.pop("turn_note"))
     code = code_box(chat)
-    prompt = transcript_box()
-    typed = read_chat_input(client, bool(health and health.get("stt_configured")))
+    prompt = transcript_box(chat)
+    typed = read_chat_input(client, chat, bool(health and health.get("stt_configured")))
     prompt = prompt or typed
 
     session_id = chat["session_id"]
     who = {"learner_id": learner} if learner else {}
     if approve or decline:
-        turn_id, remember = chat["pending"]["turn_id"], st.session_state.get("remember", True)
+        pending, remember = chat["pending"], st.session_state.get(f"remember_{session_id}", True)
         chat["pending"] = None
-        run_turn(chat, None, lambda: client.stream_approve(session_id, turn_id, approve, remember))
+        turn_id = pending["turn_id"]
+        failed = run_turn(
+            chat, None, lambda: client.stream_approve(session_id, turn_id, approve, remember)
+        )
+        if failed is not None:
+            # Unreachable or rate-limited: the server never took the request, so ask again.
+            # Anything else (404: already taken or expired) drops the prompt.
+            if failed.status in (None, 429):
+                chat["pending"] = pending
+            st.session_state["turn_note"] = error_text(failed)
+            st.rerun()  # redraw so the prompt shows only if it was kept
     elif show_clicked:
         run_turn(
             chat,
