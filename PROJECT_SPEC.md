@@ -293,8 +293,8 @@ to model discretion.
 
 | Level | Name | Content | Contains corrected code? |
 |---|---|---|---|
-| 0 | **Diagnostic question** | Ask learner to trace or predict ("What is `i` on the last pass?") | No |
-| 1 | **Locate** | Narrow to region ("Look closely at the loop condition") | No |
+| 0 | **Where and why** | Say briefly where the problem is (line or step, learner's names) and what causes it in plain words, then one question that pushes toward the fix ("On the last pass `i` is 3, past the end of `nums`. What is the biggest `i` your loop should reach?") | No |
+| 1 | **Narrow down** | Point to the specific step or value that goes wrong and why, with a conceptual nudge on what to change ("Your `range` goes one step past the last index. Which number should it stop before?") | No |
 | 2 | **Name the concept** | Identify the concept at fault ("This is an off-by-one: loop bounds") with retrieved explanation | No |
 | 3 | **Partial scaffold** | Pseudo-code or a worked analogous example (different problem) | No (analogous only) |
 | 4 | **Reveal** | Full corrected solution + explanation of why the bug happened + a transfer question | Yes |
@@ -319,11 +319,11 @@ The learner should never feel trapped. Mechanisms:
 
 - **Always-visible "Show answer"** after the first hint. No justification required. Optional soft
   confirm: "Want one more hint first, or see the full answer?"
-- **Frustration signals** trigger an offer to reveal: repeated identical submissions, ≥ 3 hints
-  without progress, time-on-problem threshold, explicit phrases ("I give up", "just tell me", "this
+- **Frustration signals** trigger an offer to reveal: repeated identical submissions, ≥ 2 hints
+  without progress (the answer is offered after 2 hints), time-on-problem threshold, explicit phrases ("I give up", "just tell me", "this
   is stupid"), rapid-fire short messages.
 - **Escalation guarantee.** Hard cap: the hint ladder reaches Level 4 within a configurable
-  budget (default: 4 tutor turns or 10 minutes on the same problem), at which point the tutor
+  budget (default: 3 tutor turns or 10 minutes on the same problem), at which point the tutor
   proactively offers the answer.
 - **Tone.** Warm, encouraging, never condescending. Normalizes struggle ("This bug
   trips up most people").

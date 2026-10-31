@@ -22,17 +22,21 @@ Hint ladder:
 
 | Level | Name in code | What the tutor does | Corrected code |
 |---|---|---|---|
-| 0 | `DIAGNOSE` | One question that makes the learner trace or predict (max 60 words) | No |
-| 1 | `LOCATE` | Narrows to the region or step, without naming the bug (max 60 words) | No |
+| 0 | `DIAGNOSE` | Says where the problem is (line or step) and what causes it, in plain words, then one question toward the fix (max 60 words) | No |
+| 1 | `LOCATE` | Narrows to the specific step or value that goes wrong and why, with a nudge on what to change as an idea (max 60 words) | No |
 | 2 | `NAME_CONCEPT` | Names the concept at fault, uses the explanation template, one check question (max 90 words) | No |
 | 3 | `SCAFFOLD` | Pseudo-code plan or a worked example on a different problem (max 110 words plus the pseudo-code) | No (pseudo-code fences allowed) |
 | 4 | `REVEAL` | Full solution, why it failed (max 120 words), transfer question | Yes |
 
-At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private
-analysis and runtime facts are only for choosing the question. The model must never state the error
-type, its cause, or the failing input; it asks the learner to run or trace a specific small input
-and say what they observe. The guard cannot catch this in prose, so it is a prompt rule, and
-`PROMPT_VERSION` was bumped to `p2` with it.
+At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) asks the model to say
+briefly where the problem is (the line or step, using the learner's own names) and what causes it,
+in plain words. For a runtime error it may name the error in plain words with a short gloss ("an
+IndexError, which means the list has no item at that position"). Then it asks one question that
+pushes the learner toward the fix. It never writes the corrected code or the exact fix; the guard
+stops corrected code on the stream, and a fix written in prose is a prompt rule only. Level 1 goes
+one step further than level 0: the specific step or value, why it goes wrong there, and a nudge on
+what to change as an idea. Level 2 names the concept with a short trace (explanation template),
+level 3 gives a pseudo-code plan. `PROMPT_VERSION` was bumped to `p4` with this rule.
 
 ## Plain, short replies
 
@@ -48,8 +52,8 @@ call gets `max_completion_tokens` for its mode (hint 250, explain 320, reveal 90
 settings `MAX_TOKENS_*`). The cap is passed per call, by mode and not by tier, and
 `RunnableWithFallbacks` hands the same kwargs to every fallback tier, so a fallback keeps it. A
 reply that hits the cap is cut off mid-sentence; the caps are set well above the word limits so
-this only happens when the model ignores them. `PROMPT_VERSION` is `p3` (this change plus the
-classifier prompt that now sees recent history).
+this only happens when the model ignores them. `PROMPT_VERSION` became `p3` with this change (plus
+the classifier prompt that now sees recent history) and is now `p4` (the early-hint rule above).
 
 ## When the answer is offered
 
@@ -57,16 +61,17 @@ classifier prompt that now sees recent history).
 
 | Trigger | Condition |
 |---|---|
-| Hints without progress | `hints_given >= 3` (starting with the 4th turn) |
-| Turn cap | `hints_given >= LADDER_MAX_TURNS` (default 4) |
+| Hints without progress | `hints_given >= 2` (after 2 hints, so from the 3rd hint on) |
+| Turn cap | `hints_given >= LADDER_MAX_TURNS` (default 3) |
 | Time cap | seconds since the first hint on this problem `>= LADDER_MAX_SECONDS` (default 600) |
 | Give-up phrase | "I give up", "this is stupid", "I'm stuck/frustrated/lost", "I don't get it/this", "this makes no sense" |
 | Repeated submission | the same code (normalized) sent a third time in a row |
 
-With the default settings the 3-hint trigger fires before the 4-turn cap, so the offer appears on
-the fourth hint. Lower `LADDER_MAX_TURNS` below 3 to offer earlier.
+With the default settings the 2-hint trigger fires before the 3-turn cap, so the offer appears with
+the third hint (level 2). Lower `LADDER_MAX_TURNS` below 2 to offer earlier. This keeps the learner
+out of a long hint loop.
 
-An offer does not reveal anything. The hint at level 3 is still given, the prompt asks the model to
+An offer does not reveal anything. The hint at its level is still given, the prompt asks the model to
 end by saying that "Show answer" is available, and the UI highlights the button. The learner
 decides. Independently of any trigger, `can_show_answer` is true after the first hint, so the
 button is enabled from then on.

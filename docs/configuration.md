@@ -37,13 +37,13 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 | Name | Default | Meaning |
 |---|---|---|
 | `INDEX_VERSION` | `v1` | Part of the Qdrant collection name (`cb_<corpus>_<version>`) and of answer and retrieval cache keys. Bump it after re-chunking or changing the embedding model |
-| `PROMPT_VERSION` | `p3` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
+| `PROMPT_VERSION` | `p4` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
 
 ### Pedagogy
 
 | Name | Default | Meaning |
 |---|---|---|
-| `LADDER_MAX_TURNS` | `4` | After this many hints on one problem the tutor offers the full answer |
+| `LADDER_MAX_TURNS` | `3` | After this many hints on one problem the tutor offers the full answer |
 | `LADDER_MAX_SECONDS` | `600` | After this long on one problem the tutor offers the full answer |
 
 | `MAX_TOKENS_HINT` | `250` | Output token cap for hint replies. Backstop for the word limits in the prompts |
@@ -151,7 +151,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `agent/nodes.py` | lock wait 1.5 s | How long a duplicate concurrent miss waits for the first to fill the cache |
 | `rag/chunking.py` | 800 to 2000 characters per chunk | About 200 to 500 tokens at 4 characters per token |
 | `llm.py` | timeouts 3 s fast, 5 s standard, 30 s heavy | So fallback fires before the latency budget is gone |
-| `pedagogy/frustration.py` | 3 hints without progress, 2 repeated submissions | Frustration signals |
+| `pedagogy/frustration.py` | 2 hints without progress, 2 repeated submissions | Frustration signals |
 | `sandbox/check.py` | 4000 characters; imports `math`, `random`, `string` | Sandbox allowlist |
 | `rag/query.py` | query 300 characters, 6 code names, RRF k=60 | Retrieval query size and fusion |
 | `agent/deps.py` | 2 history entries, 200 characters each | Context the classifier sees to resolve "it" and "that" |

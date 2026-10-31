@@ -100,7 +100,7 @@ and `retrieval.jsonl` (queries with expected text).
 | `leak_rate` | Hint replies still containing code after the guard | at most 0.02 |
 | `guard_trigger_rate` | Scripted leaky replies the guard stopped | 1.0 |
 | `pattern_recall` | Labeled bugs found by static analysis | 1.0 |
-| `escalation_ok` | Offer after three hints, never a reveal unasked | 1.0 |
+| `escalation_ok` | Offer after two hints, never a reveal unasked | 1.0 |
 | `fix_detection` | Per pattern: "I fixed it" with unchanged code is a hint, the bank solution is a `confirm` | 1.0 |
 | `retrieval_recall` | Queries whose expected text is in the top results (sample corpus) | at least 0.75 |
 

@@ -21,7 +21,7 @@ question and gives up.
 - **Grounded in course material.** Replies retrieve from an ingested textbook and cite their
   sources.
 - **The answer is always reachable.** Show answer is available after the first hint. The tutor
-  offers the answer after 3 hints, a time cap, or frustration signals, and an explicit request
+  offers the answer after 2 hints, a time cap, or frustration signals, and an explicit request
   always reveals.
 - **Policy in code, not prompt.** `pedagogy/policy.py` picks the mode; the model only puts it
   into words. A streaming guard blocks corrected code at hint levels 0 to 3, so a prompt slip
