@@ -8,6 +8,8 @@ The tutor asks the learner before it calls trace_python (see agent/nodes.py).
 
 from __future__ import annotations
 
+import sys
+
 from mcp.server.mcpserver import MCPServer
 
 from codebuddy.tools import functions
@@ -33,5 +35,13 @@ async def trace_python(code: str) -> dict:
     return await functions.trace_python(code)
 
 
+BANNER = (
+    "codebuddy-tools MCP server on stdio. It waits for an MCP client; the API starts its own "
+    "copy, so you do not need to run this. Ctrl+C to stop."
+)
+
+
 def main() -> None:
+    if sys.stdin.isatty():
+        print(BANNER, file=sys.stderr, flush=True)  # stdout carries the protocol
     mcp.run(transport="stdio")

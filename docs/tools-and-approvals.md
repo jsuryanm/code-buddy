@@ -105,6 +105,9 @@ trace and usually costs money per run or per sandbox-minute; the local backend h
 uv run python -m codebuddy.mcp_server     # speaks MCP on stdin/stdout
 ```
 
+Run by hand in a terminal, it prints a one-line banner on stderr (stdout is the protocol channel)
+and then waits for an MCP client; the API starts its own copy, so this is only a start-up check.
+
 In the API, `tools/runner.MCPToolRunner` starts that server once as a subprocess, keeps one session
 open for the life of the app through `langchain.mcp` (`MCPAdapter`), and closes it on shutdown.
 `CODEBUDDY_MCP_ENABLED=false` calls the same functions in-process (`LocalToolRunner`), and

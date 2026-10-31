@@ -145,6 +145,12 @@ The author's index holds Think Python (338 `fundamentals` chunks) and the PCDIT 
 (29 `pedagogy` chunks, arXiv:2109.08896). Tests, the eval, and the demo use the sample
 documents instead. Full steps: [docs/setup.md](docs/setup.md).
 
+The API starts the MCP tool server itself through `langchain.mcp` when
+`CODEBUDDY_MCP_ENABLED=true` (the default), so you do not run it. Running
+`uv run python -m codebuddy.mcp_server` by hand only checks that it starts: it prints a note on
+stderr and waits for an MCP client. If the API cannot start it, the API log says "calling tools
+in-process" and the tools run inside the API instead.
+
 ### C. Optional features
 
 - **Voice.** Set `GROQ_API_KEY` and restart the API; a microphone appears in the chat input. See
