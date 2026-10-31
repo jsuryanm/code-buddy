@@ -21,11 +21,12 @@ uv sync --extra ui --extra rerank   # sentence-transformers, for the cross-encod
 ## Configure
 
 ```bash
-cp env.example .env     # then edit .env
+cp .env.example .env    # then edit .env
 ```
 
-The template is named `env.example` (no leading dot) because `.claude/settings.json` denies
-Claude Code from reading `.env.*` files. `.env` itself is gitignored. Minimum for live use:
+The template is `.env.example`. `.claude/settings.json` denies Claude Code reading `.env.*`
+files, which includes the template, so edit it by hand. `.env` itself is gitignored. Minimum for
+live use:
 
 ```dotenv
 OPENAI_API_KEY=sk-...
@@ -56,7 +57,7 @@ uv run streamlit run src/codebuddy/ui/app.py
 Open http://localhost:8501, paste buggy code, and ask a question. The replies are scripted
 (see `src/codebuddy/api/demo.py`), not generated. Everything around them is real: the hint
 ladder, the leak guard, the permission prompt before your code runs (the sandbox genuinely
-executes it), and the microphone widget (which returns a canned transcript).
+executes it), and voice recording in the chat input (which returns a canned transcript).
 
 ## Add your documents
 
@@ -112,7 +113,7 @@ model IDs are set. If `CODEBUDDY_API_URL` points elsewhere, set it before starti
 ## Verify the install
 
 ```bash
-uv run pytest -q                      # 205 tests, no network or keys needed
+uv run pytest -q                      # 247 tests, no network or keys needed
 uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 ```
@@ -127,10 +128,10 @@ uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 | Replies say "I can't reach the tutor model" | The model call failed (bad key, wrong model ID, network). The API logs the cause at WARNING level; the reply falls back to course material. |
 | Replies cite nothing and say the context is missing | The corpus is empty. Ingest documents (see above) and check `data/index/manifest.json`. |
 | `PDF ingestion needs the extra` | Run `uv sync --extra pdf`. |
-| Microphone widget missing, or "Voice input is off" | The server has no speech provider. Set `GROQ_API_KEY` and restart the API (`/healthz` shows `stt_configured`) |
-| `Voice input failed (502)` | Groq (and the fallback, if set) rejected or failed the request. Type the question instead; the API log has the cause |
+| No voice recording in the chat input, or "Voice input is off" | The server has no speech provider. Set `GROQ_API_KEY` and restart the API (`/healthz` shows `stt_configured`) |
+| "Something went wrong" after a recording | Groq (and the fallback, if set) rejected or failed the request. Type the question instead; the API log has the cause |
 | The tutor never asks to run my code | Tools are off (`CODEBUDDY_TOOLS_ENABLED=false`), the code has a syntax error, the learner already answered "remember" for this session, or the message was a concept question without code |
-| `401 Missing or invalid API key` | `CODEBUDDY_API_KEYS` is set on the server. Set a matching `CODEBUDDY_API_KEY` before starting Streamlit |
+| "The tutor needs an API key" | `CODEBUDDY_API_KEYS` is set on the server. Set a matching `CODEBUDDY_API_KEY` before starting Streamlit |
 | `429 Too many requests` | Rate limit hit. Wait for `Retry-After` seconds or raise `CODEBUDDY_RATE_LIMIT_PER_MINUTE` |
 | MCP warning "calling tools in-process" in the API log | The MCP subprocess did not start; tools still work in-process. Check that `python -m codebuddy.mcp_server` runs |
 | Docling segfaults during PDF ingestion (WSL) | PyTorch crashes in its CUDA probe. Run ingestion with `CUDA_VISIBLE_DEVICES=` set to empty, for example `CUDA_VISIBLE_DEVICES= uv run python -m codebuddy.rag.ingest ...` |

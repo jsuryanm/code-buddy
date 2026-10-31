@@ -169,7 +169,7 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and 
 | Caching (10) | L1, L3, L4, L6 built; L2 semantic built but off by default; L5 not built (tool runs depend on the learner's code) |
 | LLM routing (11) | Built as in-app tiers with fallbacks; no gateway (ADR 0001) |
 | Agent, MCP, tools, human in the loop (12) | Three tools over MCP, rule-planned, learner approval before code runs, durable checkpoints (SQLite instead of Postgres). Instructor surfaces not built |
-| Speech-to-text (13) | Groq Whisper with optional OpenAI fallback behind `/v1/stt`; Streamlit microphone widget with an editable transcript. Utterances are whole recordings, not voice-activity-detected chunks |
+| Speech-to-text (13) | Groq Whisper with optional OpenAI fallback behind `/v1/stt`; voice recording in the Streamlit chat input with an editable transcript. Utterances are whole recordings, not voice-activity-detected chunks |
 | Evaluation (16) | Offline eval and CI gate built. Human review, A/B tests, and the learner pilot are not |
 | Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved detection, Postgres persistence, and accounts are not built. See `docs/memory.md` |
 | Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |

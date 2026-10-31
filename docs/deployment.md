@@ -15,7 +15,7 @@ no cloud credentials were used. Treat the files as a starting point and test the
 ## Steps
 
 ```bash
-cp env.example .env           # fill in keys and model IDs
+cp .env.example .env          # fill in keys and model IDs
 docker compose up --build -d
 # one-off ingestion against the Qdrant server (stop nothing; server mode allows concurrent access)
 docker compose run --rm api python -m codebuddy.rag.ingest /app/data/raw/thinkpython.pdf --corpus fundamentals

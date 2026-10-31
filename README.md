@@ -119,7 +119,7 @@ approval step, and sandbox are real.
 ### B. Run with real services
 
 ```bash
-cp env.example .env       # then edit .env
+cp .env.example .env      # then edit .env
 ```
 
 Fill in `OPENAI_API_KEY` and the three model IDs `CODEBUDDY_MODEL_FAST`,

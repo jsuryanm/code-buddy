@@ -14,7 +14,7 @@ uv run uvicorn codebuddy.api.demo:app --port 8000   # keyless demo API
 uv run streamlit run src/codebuddy/ui/app.py
 ```
 
-Live use needs `.env` (template: `env.example`). See [docs/](docs/README.md).
+Live use needs `.env` (template: `.env.example`). See [docs/](docs/README.md).
 
 ## State and docs
 

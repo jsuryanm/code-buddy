@@ -26,14 +26,14 @@ target design. These docs describe what is built today (slice 1) and say where t
 
 ## Status
 
-Built and tested offline (205 tests, offline eval passing):
+Built and tested offline (247 tests, offline eval passing):
 
 - Pedagogy policy, hint ladder, streaming leak guard, optional sampled LLM judge
 - Static analysis of learner Python (five bug patterns)
 - Cache layers L1 (answers), optional L2 (semantic), L3 (embeddings), L4 (retrieval), L6 (session) on Upstash Redis or memory
 - RAG ingestion and hybrid retrieval on Qdrant; query rewriting for short follow-ups
 - LangGraph tutor agent with durable checkpoints, FastAPI streaming API, Streamlit UI
-- Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, microphone widget with an editable transcript
+- Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, voice recording in the chat input with an editable transcript
 - MCP tool server (analysis, concrete-case suggestions, sandboxed tracing) and a learner approval step before any code runs
 - Opt-in long-term learner memory on mem0 (semantic, episodic, procedural notes), signed learner tokens, "Forget me" ([memory.md](memory.md))
 - A `SandboxBackend` seam for code execution (only the local backend is included)
