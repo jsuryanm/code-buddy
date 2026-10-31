@@ -28,8 +28,7 @@ can reach twice the limit.
 ### Long-term memory (opt-in)
 
 Off unless `CODEBUDDY_MEMORY_ENABLED=true`, and then only for a learner who ticks the box. Details
-in
-[memory.md](memory.md). What to know:
+in [memory.md](memory.md). What to know:
 
 - Stored: short notes about what the learner struggles with, one line per problem that ended in a
   reveal, and a summary of how they worked. Held on this server under `CODEBUDDY_MEMORY_PATH`
@@ -73,8 +72,8 @@ See [tools-and-approvals.md](tools-and-approvals.md#the-sandbox). In short: only
 learner agrees, restricted by an allowlist and resource limits, offline where the host supports
 `unshare -rn`, and not a hard boundary. Before a public launch:
 
-1. Run the sandbox in a container with no network, a read-only filesystem, a small memory limit, and
-   no secrets.
+1. Run the sandbox in a container with no network, a read-only filesystem, a small memory
+   limit, and no secrets.
 2. Or turn execution off: `CODEBUDDY_TOOLS_ENABLED=false` starts the API with no tool runner,
    so learner code is never run and no permission prompt appears. (`CODEBUDDY_MCP_ENABLED=false`
    only changes how tools are called, in-process instead of over MCP, and does not disable them.)
@@ -87,8 +86,8 @@ learner agrees, restricted by an allowlist and resource limits, offline where th
 `.env` is gitignored and `.claude/settings.json` denies Claude Code reads of `.env*`. Keys:
 `OPENAI_API_KEY`, `GROQ_API_KEY`, `UPSTASH_REDIS_REST_*`, `CODEBUDDY_API_KEYS`,
 `CODEBUDDY_MEMORY_SECRET`. The ingest CLI and the API load `.env` into the process environment at
-startup. The Docker image
-contains no secrets; pass them at runtime. Rotate a key by changing the environment and restarting.
+startup. The Docker image contains no secrets; pass them at runtime. Rotate a key by changing the
+environment and restarting.
 
 ## Not done yet
 

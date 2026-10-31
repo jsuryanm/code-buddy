@@ -37,12 +37,11 @@ Each chat is one server session. Its state lives in `st.session_state.chats` (a 
 first), and `chat_id` names the open one. A chat holds `session_id`, `messages` (role, content,
 meta, done, steps, elapsed), `stage`, `can_show`, `offer`, `pending` (a turn waiting for
 permission, with its steps), `code`, `remember` (the "remember my choice" box, kept across chat
-switches), `transcript` (what voice input heard, waiting to be edited
-and sent), `voice_note` (why the last recording could not be transcribed), and `learner` (the token
-its session is bound to on the
-server, or none; set only after a turn or Show answer sent with a token succeeds). **New chat** on
-an empty chat does nothing; a chat with no messages is replaced
-rather than piling up. Chats last as long as the browser tab.
+switches), `transcript` (what voice input heard, waiting to be edited and sent), `voice_note` (why
+the last recording could not be transcribed), and `learner` (the token its session is bound to on
+the server, or none; set only after a turn or Show answer sent with a token succeeds). **New chat**
+on an empty chat does nothing; a chat with no messages is replaced rather than piling up. Chats
+last as long as the browser tab.
 
 The server binds a session to the first learner token it sees and answers 409 to any later turn
 with another token or none. The UI therefore starts a new chat (new `session_id`) when:
@@ -59,9 +58,9 @@ with another token or none. The UI therefore starts a new chat (new `session_id`
 Other session state keys: `learner_id` (the token while known), `remember_me` (the opt-in box),
 `memory_note` (result text for Forget or a failed mint), `memory_items` (the token and the items
 last fetched by Show what I remember), `turn_note` (the notice after a 409 or a failed permission
-choice), `client` (the `TutorClient`, or a test stub). Widget keys: `new_chat`,
-`chat_<session_id>`, `code_<session_id>`, `transcript_<session_id>`, `remember_<session_id>`,
-`show_answer`, `approve_run`, `decline_run`, `send_transcript`, `discard_transcript`, `use_profile`,
+choice), `client` (the `TutorClient`, or a test stub). Widget keys: `new_chat`, `chat_<session_id>`,
+`code_<session_id>`, `transcript_<session_id>`, `remember_<session_id>`, `show_answer`,
+`approve_run`, `decline_run`, `send_transcript`, `discard_transcript`, `use_profile`,
 `show_memories`, `forget_me`.
 
 ## How it maps to the API
@@ -97,12 +96,10 @@ New chat and switching. `tests/integration/test_ui_voice_approval.py` covers the
 (per-chat remember box, a kept prompt when the tutor is unreachable, the expired sentence on 404),
 transcript editing, per-chat transcripts and the voice 503 sentence. `AppTest` cannot submit audio,
 so those tests seed the chat's transcript or patch `st.chat_input` to return a recording; recording
-in a browser needs a manual check.
-`tests/integration/test_ui_memory.py` covers the opt-in box, **Use this profile**, Forget me
-(both keep the code), the memory 503 sentence,
-the on-demand memory list, the session rotation that avoids 409 (including after Show answer),
-and the error sentences for 403, 409, 429 and an unreachable API. `tests/unit/test_ui_client.py`
-covers SSE parsing and error
-handling with `httpx.MockTransport`. No server is needed. See [testing.md](testing.md).
+in a browser needs a manual check. `tests/integration/test_ui_memory.py` covers the opt-in box,
+**Use this profile**, Forget me (both keep the code), the memory 503 sentence, the on-demand memory
+list, the session rotation that avoids 409 (including after Show answer), and the error sentences
+for 403, 409, 429 and an unreachable API. `tests/unit/test_ui_client.py` covers SSE parsing and
+error handling with `httpx.MockTransport`. No server is needed. See [testing.md](testing.md).
 
 The layout was checked in headless Chromium (Playwright) against the demo API.

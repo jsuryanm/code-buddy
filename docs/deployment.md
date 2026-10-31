@@ -47,11 +47,10 @@ mode cannot exercise, so test it.
 - Persist `/app/data` (checkpoints, manifest). Back up the Qdrant volume or re-ingest from source.
 - If learner memory is on, `/app/data/memory` holds personal data and must persist and be backed up
   (or learners lose their notes). Set `CODEBUDDY_MEMORY_SECRET` from a secret store, or tokens die
-  on
-  restart. Memory uses embedded Qdrant, so run one API worker.
+  on restart. Memory uses embedded Qdrant, so run one API worker.
 - Run the sandbox without network access (see [security.md](security.md)). In a default Docker
-  container `unshare -rn` usually fails, so `/healthz` will report `sandbox_network_isolated:
-  false`.
+  container `unshare -rn` usually fails, so `/healthz` will report
+  `sandbox_network_isolated: false`.
 - Watch `/v1/metrics`: `degraded` and `rate_limited` rising, `guard_stops` and `judge_flagged`
   for answer-leak trends, `approvals_*` for how learners react to the permission prompt.
 - Set `CODEBUDDY_JUDGE_SAMPLE_RATE` (for example 0.05) to sample hint replies for leaks.

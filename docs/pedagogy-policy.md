@@ -28,11 +28,10 @@ Hint ladder:
 | 4 | `REVEAL` | Full solution, why it failed (max 120 words), transfer question | Yes |
 
 At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private
-analysis
-and runtime facts are only for choosing the question. The model must never state the error type, its
-cause, or the failing input; it asks the learner to run or trace a specific small input and say what
-they observe. The guard cannot catch this in prose, so it is a prompt rule, and `PROMPT_VERSION`
-was bumped to `p2` with it.
+analysis and runtime facts are only for choosing the question. The model must never state the error
+type, its cause, or the failing input; it asks the learner to run or trace a specific small input
+and say what they observe. The guard cannot catch this in prose, so it is a prompt rule, and
+`PROMPT_VERSION` was bumped to `p2` with it.
 
 ## When the answer is offered
 
@@ -116,10 +115,9 @@ analysis" so it can choose a good question; they are not shown to the learner di
 | `missing_base_case` | recursion | a function calls itself and contains no `if` |
 | `shadowed_builtin` | names and scope | assigning to `list`, `sum`, `max`, `len`, and similar names |
 
-A syntax error is reported as a finding with its line number. To add a pattern, add a
-`BugPattern` entry to `PATTERNS`, a detector in `analyze()`, a case in
-`tests/unit/test_code_analysis.py`,
-and a row in `eval/golden/cases.jsonl`.
+A syntax error is reported as a finding with its line number. To add a pattern, add a `BugPattern`
+entry to `PATTERNS`, a detector in `analyze()`, a case in `tests/unit/test_code_analysis.py`, and a
+row in `eval/golden/cases.jsonl`.
 
 ## Tools and the policy
 

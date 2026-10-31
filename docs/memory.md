@@ -67,9 +67,8 @@ use `CODEBUDDY_EMBED_MODEL`.
    token in the session and in the page URL as `?learner=<token>`, so a bookmark restores the
    profile later.
 3. Opening a page whose URL already has `?learner=` does not enable memory. The Settings popover
-   says "This
-   link contains a saved learner profile. Use it only if you created it." and waits for **Use
-   this profile**. A link alone never turns memory on or sends the token.
+   says "This link contains a saved learner profile. Use it only if you created it." and waits for
+   **Use this profile**. A link alone never turns memory on or sends the token.
 4. While memory is on, the expander **What I remember about you** lists every stored item by
    kind (`GET /v1/memory` with the token in header `X-Learner-Token`).
 5. **Forget me** deletes every item for that learner (`DELETE /v1/memory`, same header), shows how
@@ -161,6 +160,6 @@ without OpenAI. Nothing it stores survives a restart.
 ## Tests
 
 `tests/unit/test_memory.py`, `tests/unit/test_learner_tokens.py`,
-`tests/unit/test_wiring_memory.py`,
-`tests/integration/test_memory.py`, and `tests/integration/test_ui_memory.py`, all offline against
-`InMemoryLearnerMemory` or a recording stub in place of mem0. See [testing.md](testing.md).
+`tests/unit/test_wiring_memory.py`, `tests/integration/test_memory.py`, and
+`tests/integration/test_ui_memory.py`, all offline against `InMemoryLearnerMemory` or a recording
+stub in place of mem0. See [testing.md](testing.md).

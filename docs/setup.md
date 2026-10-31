@@ -84,8 +84,7 @@ and licence notes are in [rag-and-ingestion.md](rag-and-ingestion.md).
 
 Check [../PROJECT_SPEC.md](../PROJECT_SPEC.md) Section 19.5 before ingesting: Think Python is
 licensed CC BY-NC 3.0 Unported (non-commercial, stated on page 4 of the PDF), and the PCDIT paper
-and page need the authors'
-permission before any learner-facing use.
+and page need the authors' permission before any learner-facing use.
 
 ## Turn on learner memory (optional)
 

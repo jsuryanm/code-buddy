@@ -53,8 +53,7 @@ deployment automation, solved detection and concept mastery for the learner mode
 Run once for real: PDF ingestion with Docling and OpenAI embeddings, on the two PDFs in the
 corpus manifest.
 
-Not yet exercised against real services: OpenAI chat replies, mem0 memory extraction, Groq
-Whisper, Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files.
-The code follows each
-library's documentation and is covered by fakes and, for MCP and the sandbox, by real
+Not yet exercised against real services: OpenAI chat replies, mem0 memory extraction, Groq Whisper,
+Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files. The code
+follows each library's documentation and is covered by fakes and, for MCP and the sandbox, by real
 subprocesses, but treat the first live run as a test.

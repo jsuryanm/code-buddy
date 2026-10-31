@@ -56,12 +56,12 @@ learner this causes:
 
 - **Answer dependence.** The learner pastes the error, copies the fix, learns nothing. Skill never
   transfers to the next problem.
-- **No meta-cognition.** Learner never practices predicting, tracing, or checking their own
-  reasoning.
+- **No meta-cognition.** Learner never practices predicting, tracing, or checking
+  their own reasoning.
 - **Hallucinated or off-level explanations.** Answers use advanced idioms, libraries, or jargon
   beyond the learner's current knowledge.
-- **No curriculum grounding.** The model is not tied to a vetted set of fundamentals, so quality
-  varies.
+- **No curriculum grounding.** The model is not tied to a vetted set of
+  fundamentals, so quality varies.
 
 ### 1.3 The opposite failure
 
@@ -122,8 +122,8 @@ bounded effort, it reveals the answer and explains it (see [Section 8](#8-pedago
    transcribed and answered.
 4. **Out of patience.** After several hints Nina clicks "Show me the answer" (or tutor offers it).
    She gets a full worked solution with explanation and a follow-up check question.
-5. **Instructor upload.** Ines uploads a syllabus PDF; it is ingested and the tutor aligns
-   terminology to it.
+5. **Instructor upload.** Ines uploads a syllabus PDF; it is ingested and the tutor
+   aligns terminology to it.
 
 ---
 
@@ -172,8 +172,8 @@ Each requirement has an ID used in [Section 22](#22-requirements-traceability).
 
 CodeBuddy has four cooperating layers:
 
-1. **Interface layer.** Web app with code editor, chat, voice input, PCDIT progress panel, "Show
-   answer" control.
+1. **Interface layer.** Web app with code editor, chat, voice input, PCDIT progress panel,
+   "Show answer" control.
 2. **Tutor agent layer.** A stateful agent (graph) that tracks PCDIT stage, learner history, and
    hint level, and decides each turn: ask a question, give a hint, explain, or reveal.
 3. **Knowledge layer.** RAG over a curated fundamentals corpus plus the PCDIT material, using hybrid
@@ -213,8 +213,8 @@ the model from leaking the answer just because it has it in context.
 3. Cache lookup (exact then semantic).
 4. If miss: retrieve, rerank, analyze code (tools), consult learner state.
 5. Pedagogy policy picks response mode (question, hint level 1–4, explanation, reveal).
-6. Generator (OpenAI model tier chosen by policy) produces a streamed response under that mode's
-   constraints.
+6. Generator (OpenAI model tier chosen by policy) produces a streamed response under
+   that mode's constraints.
 7. Output guard: a rule-based check runs on the token stream and blocks corrected code at hint
    levels 0 to 3 (Section 8.5). An LLM judge audits a sample of replies afterwards.
 8. Update learner state, write cache, emit traces.
@@ -250,22 +250,22 @@ Concrete cases or Design). The system must not force a one-way pipeline.
 
 1. **Stage tracking.** Session state holds `current_stage` and a history of transitions. A small
    classifier infers stage from learner messages and artifacts (worksheet fields, code state).
-2. **Stage-specific question banks.** Each stage has question templates, retrieved and adapted by
-   the model:
+2. **Stage-specific question banks.** Each stage has question templates, retrieved and
+   adapted by the model:
    - P: "What goes in? What should come out? What type is each?"
-   - C: "Pick a small input. What should the output be? Walk it through by hand—what happens at step
-     one?"
+   - C: "Pick a small input. What should the output be? Walk it through by hand—what
+     happens at step one?"
    - D: "Look at the steps you wrote. What repeats? Can you say it in one general sentence?"
    - I: "Which three lines can you write and test first?"
-   - T: "What value did you expect for `total` after iteration 2? What did the program actually
-     have?"
+   - T: "What value did you expect for `total` after iteration 2? What did the
+     program actually have?"
 3. **Digital PCDIT worksheet.** Interactive panel with fields per stage; learner's entries feed the
    agent as structured state.
 4. **Stage-aware error routing.** A logical error found in Testing is mapped back to the likely
    originating stage (e.g., wrong output on case 2 → revisit Concrete cases or Design) and the tutor
    steers the learner there.
-5. **Corpus alignment.** PCDIT material is indexed with `pcdit_stage` metadata so retrieval can
-   filter by stage.
+5. **Corpus alignment.** PCDIT material is indexed with `pcdit_stage` metadata so retrieval
+   can filter by stage.
 6. **Evaluation tie-in.** Rubrics score whether the tutor's turn matches the learner's actual stage
    and moves them forward (Section 16).
 
@@ -277,8 +277,8 @@ See diagram in [Section 14.4](#144-pcdit-state-machine).
 
 ## 8. Pedagogy Engine
 
-This is the product's differentiator. It is implemented as an explicit **policy layer**, not left to
-model discretion.
+This is the product's differentiator. It is implemented as an explicit **policy layer**, not left
+to model discretion.
 
 ### 8.1 Principles
 
@@ -322,11 +322,11 @@ The learner should never feel trapped. Mechanisms:
 - **Frustration signals** trigger an offer to reveal: repeated identical submissions, ≥ 3 hints
   without progress, time-on-problem threshold, explicit phrases ("I give up", "just tell me", "this
   is stupid"), rapid-fire short messages.
-- **Escalation guarantee.** Hard cap: the hint ladder reaches Level 4 within a configurable budget
-  (default: 4 tutor turns or 10 minutes on the same problem), at which point the tutor proactively
-  offers the answer.
-- **Tone.** Warm, encouraging, never condescending. Normalizes struggle ("This bug trips up most
-  people").
+- **Escalation guarantee.** Hard cap: the hint ladder reaches Level 4 within a configurable
+  budget (default: 4 tutor turns or 10 minutes on the same problem), at which point the tutor
+  proactively offers the answer.
+- **Tone.** Warm, encouraging, never condescending. Normalizes struggle ("This bug
+  trips up most people").
 - **Reveal is a teaching moment.** Answer comes with explanation, then a **transfer question** on a
   slightly different case, so reveal still builds skill.
 - **Learner control.** Settings let learners choose "more guidance" or "faster answers"; instructors
@@ -411,9 +411,9 @@ short answer flagged as outside the curated corpus.
   payload filtering, quantization, and multi-tenancy. Alternative for simplicity: Upstash Vector
   (serverless, same vendor as Redis) or pgvector if the team wants one fewer system.
 - **Corpora separated by access type:** `fundamentals` (learner-facing, citable), `pedagogy`
-  (tutor-only, never quoted to learners), `tenant_<id>` (instructor uploads, filter-enforced).
-  Separation is done by collection, not by prompt instruction, so the model cannot leak what it
-  never retrieves.
+  (tutor-only, never quoted to learners), `tenant_<id>` (instructor uploads,
+  filter-enforced). Separation is done by collection, not by prompt instruction, so the model
+  cannot leak what it never retrieves.
 - **Collection design**:
   - One collection per embedding model version; alias points to the active one.
   - Dense vector + sparse (BM25/SPLADE) vector per chunk for native hybrid search.
@@ -431,8 +431,8 @@ query → rewrite/expand → hybrid search (dense + sparse, filtered) → fuse (
 ```
 
 1. **Query understanding** (small model): classify intent (concept question, debug help,
-   problem-start), extract concepts, detect language, resolve references from conversation ("it",
-   "that loop").
+   problem-start), extract concepts, detect language, resolve references from conversation
+   ("it", "that loop").
 2. **Query rewriting**: standalone question; optionally multi-query or HyDE for vague queries.
 3. **Metadata filtering**: filter on inferred `concept`, `language`, `difficulty ≤ learner level`,
    optionally `pcdit_stage`.
@@ -448,8 +448,8 @@ query → rewrite/expand → hybrid search (dense + sparse, filtered) → fuse (
 
 Learners' code is part of the query. The system:
 
-- Extracts structural features with an AST parser (loops, conditionals, function signatures) and
-  error traces.
+- Extracts structural features with an AST parser (loops, conditionals, function
+  signatures) and error traces.
 - Maps them to concept tags and retrieves "common-bug" chunks matching the pattern (e.g.,
   `range(len(x)+1)` → off-by-one).
 - Keeps a **bug-pattern knowledge base**: pattern, symptom, explanation, Socratic questions that
@@ -458,8 +458,8 @@ Learners' code is part of the query. The system:
 ### 9.6 Grounding and citation
 
 - Every explanation carries source references shown to the learner ("From: Think Python, ch. 7").
-- Generator prompt: answer only from provided context for factual claims; say so when context is
-  insufficient.
+- Generator prompt: answer only from provided context for factual claims; say so when
+  context is insufficient.
 - Faithfulness checked offline and sampled online (Section 16).
 
 ### 9.7 Index freshness and versioning
@@ -477,8 +477,8 @@ Learners' code is part of the query. The system:
 Honest framing: a large-model response generated in full will rarely finish in under 1 second. The
 requirement is therefore defined as:
 
-- **p95 time-to-first-token (TTFT) < 1000 ms** for streamed responses (the learner sees text begin
-  within a second).
+- **p95 time-to-first-token (TTFT) < 1000 ms** for streamed responses (the learner sees text
+  begin within a second).
 - **Cache-hit responses complete in < 300 ms.**
 - Non-LLM stages (cache lookup, retrieval, rerank) have strict budgets below.
 
@@ -525,18 +525,18 @@ Naive answer caching conflicts with the pedagogy engine. Rules:
   context, which is fast.
 - **Never cache Level 4 reveals** across different user code (the answer depends on the code). Cache
   only code-independent artifacts.
-- **Cache hits for repeated identical questions** (e.g., FAQ-style "what is recursion?") are the
-  high-value case.
-- **Invalidate** on index version change, prompt version change, or model change (all included in
-  key).
-- **Stampede protection**: single-flight lock (`SET NX`) so concurrent identical misses trigger one
-  generation.
+- **Cache hits for repeated identical questions** (e.g., FAQ-style "what is recursion?") are
+  the high-value case.
+- **Invalidate** on index version change, prompt version change, or model change
+  (all included in key).
+- **Stampede protection**: single-flight lock (`SET NX`) so concurrent identical misses
+  trigger one generation.
 - **Provider prompt caching**: structure prompts with a long static prefix (system prompt, pedagogy
   rules, few-shot examples) so OpenAI's automatic prompt caching (applies to long repeated prefixes;
   verify current thresholds) reduces TTFT and cost.
 - **Cache warming**: pre-compute answers for top-N curriculum questions and concepts at deploy time.
-- **Metrics**: hit rate per layer, semantic-cache false-positive rate (sampled and reviewed),
-  latency saved.
+- **Metrics**: hit rate per layer, semantic-cache false-positive rate (sampled and
+  reviewed), latency saved.
 
 ### 10.5 Other latency optimizations
 
@@ -569,10 +569,10 @@ What a gateway would have provided, and where it now lives:
 | Retries and timeouts | `ChatOpenAI(max_retries=..., timeout=...)` |
 | Logging and cost attribution | Langfuse callback tags (tier, task class, hashed user) |
 
-**Accepted trade-off:** a full OpenAI outage is not survived by switching provider. It is survived
-by degraded mode (Section 11.4). If that is unacceptable (open question 8), add a second provider
-behind the same LangChain chat-model interface. Application code does not change, only config and
-the model class.
+**Accepted trade-off:** a full OpenAI outage is not survived by switching provider. It is
+survived by degraded mode (Section 11.4). If that is unacceptable (open question 8), add a second
+provider behind the same LangChain chat-model interface. Application code does not change, only
+config and the model class.
 
 ### 11.2 Model tiers (config, not code)
 
@@ -620,13 +620,13 @@ comes from config. Upgrading a model is a config change, not a code change.
 ### 11.4 Fallback and resilience (in-app)
 
 - **Retries:** `max_retries` with exponential backoff on 429 and 5xx, built into `ChatOpenAI`.
-- **Timeouts:** per-tier timeout so fallback fires before the latency budget is spent (e.g., 1.5 s
-  on `tutor-fast`).
+- **Timeouts:** per-tier timeout so fallback fires before the latency budget is spent (e.g.,
+  1.5 s on `tutor-fast`).
 - **Tier fallback:** `heavy → standard → fast`. A lower tier answers instead of failing. Responses
   served by a fallback tier are tagged `degraded_model=true` in traces.
-- **Circuit breaker:** LangChain does not provide one. Build a small breaker with an Upstash Redis
-  counter and TTL: after N failures in a window, skip OpenAI for 30–60 s and go straight to degraded
-  mode.
+- **Circuit breaker:** LangChain does not provide one. Build a small breaker with an Upstash
+  Redis counter and TTL: after N failures in a window, skip OpenAI for 30–60 s and go
+  straight to degraded mode.
 - **Context-window overflow:** choose a larger-context model at routing time when the assembled
   prompt exceeds the budget. Keep prompts short by design (Section 9.4, step 7).
 - **Degraded mode:** if all tiers fail, serve a cached or retrieved concept explanation (no
@@ -636,8 +636,8 @@ comes from config. Upgrading a model is a config change, not a code change.
 
 - OpenAI and Groq keys live only in the secret manager. The app reads them from environment at
   startup; rotation is a secret update plus restart, no code change.
-- One OpenAI project per environment, each with a monthly budget and alert set in the OpenAI
-  dashboard.
+- One OpenAI project per environment, each with a monthly budget and alert set in
+  the OpenAI dashboard.
 - Per-user and per-session token budgets enforced in the app with Upstash Redis counters (daily
   caps; rate limits via `@upstash/ratelimit`).
 - Cost attribution: Langfuse tags per request (tier, task class, hashed user ID, session).
@@ -698,9 +698,9 @@ Proposed MCP servers/tools:
 | `instructor_publish_material(doc)` | Add course material to corpus | Write, shared | **Human approval (instructor/admin)** |
 | `send_report_to_instructor(...)` | Share learner data with a third party | Privacy-sensitive | **Learner consent + approval** |
 
-MCP practices: pin server versions, authenticate (OAuth/API keys), scope per user, validate all
-inputs, log every call, rate limit, and treat tool descriptions from third-party servers as
-untrusted.
+MCP practices: pin server versions, authenticate (OAuth/API keys), scope per user, validate
+all inputs, log every call, rate limit, and treat tool descriptions from third-party
+servers as untrusted.
 
 > **Built in v0.4.** `analyze_python` (read), `suggest_cases` (read), and `trace_python` (execute)
 > are served over MCP stdio and called through `langchain.mcp`. Rules, not the model, choose tools.
@@ -723,9 +723,9 @@ Three distinct HITL surfaces:
    persists state, shows the pending action and parameters, and resumes on approve / edit / reject.
    Applies to writes affecting shared data or third parties.
 3. **Instructor/expert review loop (quality).** Flagged low-rated, low-faithfulness, or
-   answer-leak-suspected conversations go to a review queue; reviewed items become new golden test
-   cases and bug-pattern entries. Instructors can approve corpus additions and edit canned Socratic
-   questions.
+   answer-leak-suspected conversations go to a review queue; reviewed items become new golden
+   test cases and bug-pattern entries. Instructors can approve corpus additions and edit
+   canned Socratic questions.
 
 ### 12.5 Agent workflow loop
 
@@ -737,9 +737,9 @@ See sequence diagram in [14.5](#145-hitl-approval-flow).
 
 ### 13.1 Requirements
 
-- Fast transcription. Groq Whisper is a batch API, so the client cuts audio into utterances (voice
-  activity detection) and sends each one. Target: transcript within 1 s of utterance end (measure,
-  don't assume).
+- Fast transcription. Groq Whisper is a batch API, so the client cuts audio into utterances
+  (voice activity detection) and sends each one. Target: transcript within 1 s of utterance end
+  (measure, don't assume).
 - Good accuracy on programming vocabulary ("for loop", "i plus plus", "null pointer", "list
   comprehension", identifiers). Pass a programming vocabulary list via Whisper's `prompt` parameter
   to bias recognition.
@@ -761,8 +761,8 @@ pipeline. Deepgram and AssemblyAI are dropped from v1 to keep the vendor count d
 
 ### 13.3 Flow
 
-1. Browser records audio (MediaRecorder) and uses voice activity detection to end each utterance on
-   pause.
+1. Browser records audio (MediaRecorder) and uses voice activity detection to end
+   each utterance on pause.
 2. Utterance is uploaded to the FastAPI `/stt` endpoint, which calls Groq Whisper
    (`whisper-large-v3-turbo`) with a programming-vocabulary `prompt`. On error or timeout it falls
    back to OpenAI transcription behind the same interface.
@@ -1064,8 +1064,8 @@ flowchart TB
 
 ## 15. Recommended Tech Stack
 
-Selected for **simplicity, popularity, and production readiness**. Prefer boring, well-documented
-tools.
+Selected for **simplicity, popularity, and production readiness**. Prefer boring,
+well-documented tools.
 
 | Concern | Recommendation | Why | Alternatives |
 |---|---|---|---|
@@ -1142,12 +1142,12 @@ remains its own package for third-party integrations.
 | `langchain-classic` | Only for a legacy class we need and cannot replace cheaply | **Avoid by default**; add it only with a documented reason in an ADR |
 
 Decisions:
-- Reranking is a plain function (Section 15.1), so the retriever classes in `langchain-classic` are
-  not needed.
+- Reranking is a plain function (Section 15.1), so the retriever classes in
+  `langchain-classic` are not needed.
 - Verify whether the Upstash cache and chat-history integrations live in `langchain-community` or in
   a separate package before pinning dependencies.
-- Pin every LangChain package to a version in the lockfile. Upgrades go through the eval gate
-  (Section 16).
+- Pin every LangChain package to a version in the lockfile. Upgrades go through the
+  eval gate (Section 16).
 
 ---
 
@@ -1158,9 +1158,9 @@ Evaluation is split into **retrieval quality**, **generation quality**, **pedago
 
 ### 16.1 Datasets
 
-- **Golden set** (start with 200–300 items, grow continuously): learner question or buggy code,
-  expected concepts, relevant source chunks, reference explanation, expected PCDIT stage, ideal hint
-  sequence.
+- **Golden set** (start with 200–300 items, grow continuously): learner question or buggy
+  code, expected concepts, relevant source chunks, reference explanation, expected PCDIT
+  stage, ideal hint sequence.
 - **Buggy-program bank**: common novice bugs (off-by-one, wrong loop bound, uninitialized
   accumulator, shadowing, mutating while iterating, integer division, base-case missing in
   recursion, etc.) with known root cause and Socratic question path.
@@ -1168,8 +1168,8 @@ Evaluation is split into **retrieval quality**, **generation quality**, **pedago
   answer", out-of-scope requests, jailbreaks, requests to do homework wholesale.
 - **Synthetic learner personas**: LLM-simulated learners (confident-wrong, quiet, frustrated,
   expert-in-disguise) for end-to-end tests.
-- **Production samples**: sampled, anonymized real conversations, human-labeled, fed back into
-  golden set.
+- **Production samples**: sampled, anonymized real conversations, human-labeled, fed
+  back into golden set.
 
 ### 16.2 Metrics
 
@@ -1191,20 +1191,20 @@ Evaluation is split into **retrieval quality**, **generation quality**, **pedago
 
 - **Offline CI evals**: DeepEval/Ragas/promptfoo suites on every PR touching prompts, retrieval,
   models, or policy. **Block merge** on regression beyond tolerance.
-- **LLM-as-judge** with calibrated rubrics, using a stronger model than the generator; periodically
-  **validate judge against human labels** (agreement check) and use pairwise comparisons to reduce
-  bias.
+- **LLM-as-judge** with calibrated rubrics, using a stronger model than the generator;
+  periodically **validate judge against human labels** (agreement check) and use pairwise
+  comparisons to reduce bias.
 - **Human expert review**: instructors score a weekly sample; disagreements refine rubrics.
-- **A/B testing** of prompts, hint-ladder thresholds, reveal timing, and models, with
-  learner-outcome metrics as the deciding signal (not just satisfaction, since easy answers feel
-  good).
-- **Online monitoring**: sampled faithfulness scoring, thumbs up/down, frustration-signal rate,
-  alerting on drift.
+- **A/B testing** of prompts, hint-ladder thresholds, reveal timing, and models,
+  with learner-outcome metrics as the deciding signal (not just satisfaction, since
+  easy answers feel good).
+- **Online monitoring**: sampled faithfulness scoring, thumbs up/down, frustration-signal
+  rate, alerting on drift.
 - **Red-teaming** before launch and each major release.
 - **Learner study / pilot**: small cohort pre/post test comparing CodeBuddy to a baseline general
   chatbot, measuring learning (not just satisfaction).
-- **Regression on index updates**: retrieval eval runs automatically before alias swap (Section
-  9.2).
+- **Regression on index updates**: retrieval eval runs automatically before
+  alias swap (Section 9.2).
 
 ### 16.4 Key tension to monitor
 
@@ -1227,32 +1227,32 @@ secret manager; no secrets in code.
 3. Security scans (dependencies, secrets, container images).
 4. Build container images; push to registry.
 5. Deploy to staging; run smoke tests and a short load test (k6/Locust) asserting latency budgets.
-6. Canary release in production (e.g., 5% traffic) with automatic rollback on error-rate or latency
-   regression.
+6. Canary release in production (e.g., 5% traffic) with automatic rollback on error-rate
+   or latency regression.
 7. Prompt and model changes go through the same pipeline and are versioned.
 
 ### 17.3 Runtime
 
 - Stateless API containers, autoscaled on CPU and concurrency.
-- Redis, vector DB, and API in the same region; multi-region later with Upstash global replication
-  for reads.
+- Redis, vector DB, and API in the same region; multi-region later with Upstash global
+  replication for reads.
 - Graceful degradation order: semantic-cache answers → smaller model → concept-only retrieved
   explanation → friendly error with retry.
-- Backups: Postgres PITR; Qdrant snapshots; re-ingestion pipeline is reproducible from source
-  documents.
+- Backups: Postgres PITR; Qdrant snapshots; re-ingestion pipeline is reproducible
+  from source documents.
 
 ### 17.4 Observability and alerting
 
 - Traces per request (Langfuse/OTel) spanning cache, retrieval, tool, and LLM calls.
 - Dashboards: TTFT p50/p95, cache hit rates, fallback rate, tool errors, cost per session, reveal
   rate, frustration-signal rate.
-- Alerts: p95 TTFT breach, provider error spike, cost anomaly, answer-leak detector trigger rate,
-  eval drift.
+- Alerts: p95 TTFT breach, provider error spike, cost anomaly, answer-leak detector
+  trigger rate, eval drift.
 
 ### 17.5 Cost controls
 
-Small-model-first routing, caching, prompt caching, token caps, per-user budgets, batch embedding,
-quantized vectors.
+Small-model-first routing, caching, prompt caching, token caps, per-user budgets, batch
+embedding, quantized vectors.
 
 ### 17.6 Must-have features checklist (FR8)
 
@@ -1279,8 +1279,8 @@ quantized vectors.
   classifier on inputs and retrieved content.
 - **Code execution**: sandbox with no network, read-only filesystem, CPU/memory/time/process limits,
   ephemeral containers, per-run isolation. Never run learner code on the API host.
-- **Authorization**: tenant-scoped data access enforced in vector filters and DB queries; MCP tool
-  scopes per user.
+- **Authorization**: tenant-scoped data access enforced in vector filters and DB queries; MCP
+  tool scopes per user.
 - **Secrets**: OpenAI and Groq keys only in the secret manager; rotation supported.
 - **Privacy**: minimize data; redact PII from logs and traces; configurable retention; no training
   on learner data; consent for sharing with instructors; handle minors per applicable law
@@ -1295,8 +1295,8 @@ quantized vectors.
 
 ## 19. Knowledge Sources and Documents
 
-Verify each license before ingestion and record it in the `license` metadata field. Prefer openly
-licensed content.
+Verify each license before ingestion and record it in the `license` metadata field. Prefer
+openly licensed content.
 
 ### 19.1 Core programming fundamentals (open or permitted)
 
@@ -1316,8 +1316,8 @@ licensed content.
 | **OpenDSA** | Data structures e-book | Open license |
 | **Open textbooks (OpenStax, LibreTexts CS)** | Textbooks | Open licenses |
 
-Start with **one language (Python)** to keep the corpus tight; add a second only after quality
-targets are met.
+Start with **one language (Python)** to keep the corpus tight; add a second only after
+quality targets are met.
 
 ### 19.2 Pedagogy and PCDIT sources
 
@@ -1357,8 +1357,8 @@ targets are met.
 7. `docs/api-and-mcp-tools.md`: endpoints, tool schemas, approval policy
 8. `docs/runbook.md`: deploy, rollback, incident response
 9. `docs/privacy-and-safety.md`: data handling, retention, red-team results
-10. `docs/adr/`: architecture decision records (LLM provider choice, STT provider choice, vector DB,
-    cache keys)
+10. `docs/adr/`: architecture decision records (LLM provider choice, STT provider choice,
+    vector DB, cache keys)
 11. `prompts/`: versioned system prompts with changelog
 
 ### 19.5 Initial RAG corpus (v1 documents)
