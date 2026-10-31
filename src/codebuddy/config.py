@@ -19,11 +19,17 @@ class Settings(BaseSettings):
 
     # Versions folded into cache keys so stale answers invalidate automatically
     index_version: str = "v1"
-    prompt_version: str = "p2"
+    prompt_version: str = "p3"
 
     # Hint ladder escalation (spec 8.4)
     ladder_max_turns: int = 4
     ladder_max_seconds: int = 600
+
+    # Output token caps per reply mode: a backstop for the word limits in the prompts
+    max_tokens_hint: int = 250
+    max_tokens_explain: int = 320
+    max_tokens_reveal: int = 900
+    max_tokens_redirect: int = 90
 
     # Vector store: embedded path for dev, URL for a server
     qdrant_path: str = "data/index"
@@ -33,6 +39,7 @@ class Settings(BaseSettings):
     retrieve_k: int = 30
     rerank_top: int = 5
     relevance_threshold: float = 0.15
+    refine_timeout_s: float = 0.3  # budget for the second (classifier query) retrieval
     use_cross_encoder: bool = False  # needs: uv sync --extra rerank
 
     # Speech-to-text (Groq Whisper, optional OpenAI fallback)

@@ -9,7 +9,7 @@ COUNTERS = (
     "turns", "cache_hits", "semantic_hits", "guard_stops", "degraded", "tool_runs",
     "approvals_requested", "approvals_granted", "approvals_declined",
     "judge_checked", "judge_flagged", "stt_requests", "stt_failures", "rate_limited",
-    "memory_recalls", "memory_writes", "memory_failures",
+    "memory_recalls", "memory_writes", "memory_failures", "refine_timeouts",
 )  # fmt: skip
 
 

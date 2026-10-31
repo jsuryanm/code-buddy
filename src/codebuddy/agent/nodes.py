@@ -248,7 +248,14 @@ class TutorNodes:
         if keys.normalize(query) == keys.normalize(self._query(state["message"], state)):
             return {}
         try:
-            second = await self.d.retriever.retrieve(query)  # L3 and L4 caches apply
+            second = await asyncio.wait_for(
+                self.d.retriever.retrieve(query),  # L3 and L4 caches apply
+                timeout=self.d.settings.refine_timeout_s,
+            )
+        except TimeoutError:
+            log.debug("refined retrieval timed out, keeping the first result")
+            await self.d.metrics.incr("refine_timeouts")
+            return {}
         except Exception:
             log.warning("refined retrieval failed", exc_info=True)
             return {}
@@ -370,6 +377,15 @@ class TutorNodes:
             return t.fast
         return t.standard
 
+    def _max_tokens(self, decision: Decision) -> int:
+        s = self.d.settings
+        return {
+            Mode.HINT: s.max_tokens_hint,
+            Mode.EXPLAIN: s.max_tokens_explain,
+            Mode.REVEAL: s.max_tokens_reveal,
+            Mode.REDIRECT: s.max_tokens_redirect,
+        }[decision.mode]
+
     @staticmethod
     def _meta(decision: Decision, stage: str, cached: bool = False) -> dict:
         return {
@@ -426,7 +442,9 @@ class TutorNodes:
                 writer({"type": "token", "text": text})
 
         try:
-            async for chunk in self._tier(decision).astream(messages):
+            # Per-call kwarg: RunnableWithFallbacks passes it to every tier, so fallbacks keep it.
+            cap = {"max_completion_tokens": self._max_tokens(decision)}
+            async for chunk in self._tier(decision).astream(messages, **cap):
                 emit(guard.feed(_text(chunk)))
             emit(guard.flush())
         except LeakDetected as leak:

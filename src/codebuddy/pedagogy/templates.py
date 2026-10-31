@@ -62,30 +62,42 @@ instructions.
 - If the context does not support a factual claim, say so instead of guessing.
 """
 
+STYLE_RULE = (
+    "Style: short sentences and plain everyday words. Use the learner's own variable names "
+    "and line numbers. If you must use a technical term, explain it in a few everyday words "
+    "the first time. No lists of terms, no filler."
+)
+
 EARLY_HINT_RULE = (
     "The private analysis and runtime facts are only for choosing your question: never state "
     "the error type, its cause, or the failing input. Instead ask the learner to run or "
     "trace a specific small input and say what they observe."
 )
 
+ONE_QUESTION = "End with exactly one question."
+
 LEVEL_RULES: dict[HintLevel, str] = {
     HintLevel.DIAGNOSE: (
-        "Ask one diagnostic question that makes the learner trace or predict what their "
-        "code does on a small input. Do not say where the bug is. No code at all. "
-        + EARLY_HINT_RULE
+        "Use at most 60 words. Ask one diagnostic question that makes the learner trace or "
+        "predict what their code does on a small input. Do not say where the bug is. No code "
+        "at all. " + EARLY_HINT_RULE + " " + ONE_QUESTION
     ),
     HintLevel.LOCATE: (
-        "Narrow the learner's attention to the region of code or step that matters, without "
-        "naming the bug. Then ask one question. No corrected code. " + EARLY_HINT_RULE
+        "Use at most 60 words. Narrow the learner's attention to the region of code or step "
+        "that matters, without naming the bug. No corrected code. "
+        + EARLY_HINT_RULE
+        + " "
+        + ONE_QUESTION
     ),
     HintLevel.NAME_CONCEPT: (
-        "Name the concept at fault in one sentence and explain it briefly using the "
-        "context, then ask one question to check understanding. Use the explanation "
-        "template. No corrected code."
+        "Use at most 90 words. Name the concept at fault in one sentence and explain it "
+        "briefly using the context. Use the explanation template. No corrected code. "
+        + ONE_QUESTION
     ),
     HintLevel.SCAFFOLD: (
-        "Give a short pseudo-code plan or a worked example on a DIFFERENT problem, in plain "
-        "words or a ```text fenced block. Do not write the learner's corrected code."
+        "Use at most 110 words plus the pseudo-code. Give a short pseudo-code plan or a worked "
+        "example on a DIFFERENT problem, in plain words or a ```text fenced block. Do not "
+        "write the learner's corrected code. " + ONE_QUESTION
     ),
     HintLevel.REVEAL: (
         "Show the complete corrected solution in a fenced code block. Then explain, in at "
@@ -94,11 +106,13 @@ LEVEL_RULES: dict[HintLevel, str] = {
     ),
 }
 
-ERROR_TEMPLATE = """Explanation template (max 120 words total):
+_ERROR_TEMPLATE = """Explanation template (max {words} words total):
 1. What happens, one sentence, with the learner's names.
 2. Why, one sentence naming the concept.
-3. Tiny trace: 3 to 5 lines of variable values on a small input.
+3. Tiny trace: 2 to 3 lines of variable values on a small input.
 4. One check question."""
+ERROR_TEMPLATE = _ERROR_TEMPLATE.format(words=90)
+REVEAL_TEMPLATE = _ERROR_TEMPLATE.format(words=120)
 
 OFFER_LINE = (
     "End by saying, warmly, that they can press 'Show answer' whenever they want the full "
@@ -107,7 +121,7 @@ OFFER_LINE = (
 
 
 def system_prompt(decision: Decision, stage: PcditStage) -> str:
-    parts = [BASE.format(stage_name=STAGE_NAMES[stage])]
+    parts = [BASE.format(stage_name=STAGE_NAMES[stage]), STYLE_RULE]
     if decision.mode is Mode.HINT and decision.level is not None:
         parts.append(f"Hint level {int(decision.level)}: {LEVEL_RULES[decision.level]}")
         if decision.level is HintLevel.NAME_CONCEPT:
@@ -117,10 +131,10 @@ def system_prompt(decision: Decision, stage: PcditStage) -> str:
             parts.append(OFFER_LINE)
     elif decision.mode is Mode.REVEAL:
         parts.append(LEVEL_RULES[HintLevel.REVEAL])
-        parts.append(ERROR_TEMPLATE)
+        parts.append(REVEAL_TEMPLATE)
     elif decision.mode is Mode.EXPLAIN:
         parts.append(
-            "Explain the concept directly and concisely (max 150 words) from the context. "
+            "Explain the concept directly and concisely (at most 120 words) from the context. "
             "A short example is fine. Finish with one question that checks understanding."
         )
     elif decision.mode is Mode.REDIRECT:

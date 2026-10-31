@@ -21,10 +21,10 @@ Hint ladder:
 
 | Level | Name in code | What the tutor does | Corrected code |
 |---|---|---|---|
-| 0 | `DIAGNOSE` | One question that makes the learner trace or predict | No |
-| 1 | `LOCATE` | Narrows to the region or step, without naming the bug | No |
-| 2 | `NAME_CONCEPT` | Names the concept at fault, uses the explanation template, one check question | No |
-| 3 | `SCAFFOLD` | Pseudo-code plan or a worked example on a different problem | No (pseudo-code fences allowed) |
+| 0 | `DIAGNOSE` | One question that makes the learner trace or predict (max 60 words) | No |
+| 1 | `LOCATE` | Narrows to the region or step, without naming the bug (max 60 words) | No |
+| 2 | `NAME_CONCEPT` | Names the concept at fault, uses the explanation template, one check question (max 90 words) | No |
+| 3 | `SCAFFOLD` | Pseudo-code plan or a worked example on a different problem (max 110 words plus the pseudo-code) | No (pseudo-code fences allowed) |
 | 4 | `REVEAL` | Full solution, why it failed (max 120 words), transfer question | Yes |
 
 At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private
@@ -32,6 +32,23 @@ analysis and runtime facts are only for choosing the question. The model must ne
 type, its cause, or the failing input; it asks the learner to run or trace a specific small input
 and say what they observe. The guard cannot catch this in prose, so it is a prompt rule, and
 `PROMPT_VERSION` was bumped to `p2` with it.
+
+## Plain, short replies
+
+Every learner-facing prompt carries `STYLE_RULE` (`pedagogy/templates.py`): short sentences, plain
+everyday words, the learner's own variable names and line numbers, a technical term explained in a
+few everyday words the first time, no lists of terms, no filler. Each hint level ends with exactly
+one question. Word limits: levels 0 and 1 at most 60 words, level 2 at most 90, level 3 at most 110
+plus the pseudo-code, explanations at most 120, reveals keep a 120-word "why" plus the code,
+redirects stay at two sentences.
+
+Word limits in a prompt are a request, not a guarantee, so the code adds a backstop: each model
+call gets `max_completion_tokens` for its mode (hint 250, explain 320, reveal 900, redirect 90;
+settings `MAX_TOKENS_*`). The cap is passed per call, by mode and not by tier, and
+`RunnableWithFallbacks` hands the same kwargs to every fallback tier, so a fallback keeps it. A
+reply that hits the cap is cut off mid-sentence; the caps are set well above the word limits so
+this only happens when the model ignores them. `PROMPT_VERSION` is `p3` (this change plus the
+classifier prompt that now sees recent history).
 
 ## When the answer is offered
 
@@ -95,11 +112,11 @@ question from the stage question bank (`pedagogy/templates.py`).
 
 ## Explanation template
 
-Used at level 2 and for reveals. At most 120 words:
+Used at level 2 (at most 90 words) and for reveals (at most 120 words):
 
 1. What happens, one sentence, using the learner's variable names.
 2. Why, one sentence naming the concept.
-3. Tiny trace, 3 to 5 lines of variable values on a small input.
+3. Tiny trace, 2 to 3 lines of variable values on a small input.
 4. One check question.
 
 ## Bug patterns (`agent/code_analysis.py`)

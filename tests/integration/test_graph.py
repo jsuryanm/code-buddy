@@ -1,4 +1,12 @@
+from codebuddy.agent.state import Classification
+from codebuddy.schemas import Intent, PcditStage
 from tests.helpers import ScriptedChat
+
+
+class OffTopicClassifier:
+    async def classify(self, message, code, progress):
+        return Classification(intent=Intent.OFF_TOPIC, stage=PcditStage.P, search_query="")
+
 
 BUGGY = "nums = [1, 2, 3]\ntotal = 0\nfor i in range(len(nums) + 1):\n    total += nums[i]\n"
 
@@ -112,3 +120,20 @@ async def test_citations_come_from_retrieval(make_harness):
     out = await h.turn("off-by-one error in my for loop", code=BUGGY)
     cites = out["state"]["citations"]
     assert cites and cites[0].source == "Sample Basics"
+
+
+async def test_token_cap_follows_the_mode_not_the_tier(make_harness):
+    standard = ScriptedChat(["Q?", "A loop repeats code [1]."])
+    heavy = ScriptedChat(["Here you go."])
+    fast = ScriptedChat(["Sorry, only programming."])
+    h = make_harness(standard=standard, heavy=heavy, fast=fast)
+    s = h.deps.settings
+    await h.turn("my sum crashes", code=BUGGY)
+    await h.turn("what is a loop")
+    await h.turn("show me the answer", code=BUGGY)
+    h.deps.classifier = OffTopicClassifier()
+    await h.turn("what is the capital of France")
+    assert standard.kwargs[0] == {"max_completion_tokens": s.max_tokens_hint}
+    assert standard.kwargs[1] == {"max_completion_tokens": s.max_tokens_explain}
+    assert heavy.kwargs[0] == {"max_completion_tokens": s.max_tokens_reveal}
+    assert fast.kwargs[0] == {"max_completion_tokens": s.max_tokens_redirect}

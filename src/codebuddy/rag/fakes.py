@@ -33,9 +33,11 @@ class ScriptedChat:
         self.replies = list(replies or [])
         self.fail = fail
         self.calls: list[list[tuple[str, str]]] = []
+        self.kwargs: list[dict] = []
 
     async def astream(self, messages, *args, **kwargs):
         self.calls.append(list(messages))
+        self.kwargs.append(kwargs)
         if self.fail:
             raise RuntimeError("model unavailable")
         text = self.replies.pop(0) if self.replies else "Okay."

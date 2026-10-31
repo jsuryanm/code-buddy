@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 import numpy as np
 
 from codebuddy.agent.state import Classification
@@ -140,3 +143,22 @@ async def test_foreign_turn_gets_no_history_and_no_second_query(make_harness):
     assert classifier.progress[-1].history == []
     assert len(calls) == 1
     assert (await h.deps.sessions.load("s1")).history  # the owner's history is untouched
+
+
+async def test_slow_second_retrieval_times_out_and_keeps_the_first_result(make_harness, caplog):
+    h = make_harness(standard=ScriptedChat(["Q?"]))
+    h.deps.classifier = FollowUpClassifier()
+    h.deps.settings.refine_timeout_s = 0.05
+    first = RetrievedChunk("first only", 0.9, {"content_hash": "1"})
+
+    async def fake(query, **kw):
+        if query.startswith("off-by-one"):
+            await asyncio.sleep(5)
+        return RetrievalResult([first], grounded=True)
+
+    h.deps.retriever.retrieve = fake
+    with caplog.at_level(logging.DEBUG, logger="codebuddy"):
+        out = await asyncio.wait_for(h.turn("my loop crashes", code=BUGGY), 3)
+    assert [c.text for c in out["state"]["retrieval"].chunks] == ["first only"]
+    assert (await h.deps.metrics.snapshot())["refine_timeouts"] == 1
+    assert "my loop crashes" not in caplog.text

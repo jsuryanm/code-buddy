@@ -34,19 +34,19 @@ from codebuddy.tools.runner import LocalToolRunner
 SAMPLE = Path(__file__).parents[3] / "data" / "sample"
 
 HINTS = {
-    0: "Let's trace it together. On the very last pass of your loop, what is the value of `i`?",
-    1: "Look closely at the line that starts the loop. How many items does your list have, "
-    "and what is the largest valid index?",
-    2: "This is an off-by-one error: `range(n)` stops before `n`, and list indexes end at "
-    "n - 1 [1]. What does that tell you about your loop header?",
-    3: "Plan in words: start the total at zero, visit each valid index once, add the item. "
-    "Which part of your loop breaks that plan?",
+    0: "Look at the last pass of your loop. What is the value of `i` then?",
+    1: "Check the line that starts the loop. How many items does your list have, "
+    "and what is the last valid index?",
+    2: "This is an off-by-one error: `range(n)` stops before `n`, and indexes end at "
+    "n - 1 [1]. What does that say about your loop line?",
+    3: "Plan: start the total at zero, visit each valid index once, add the item. "
+    "Which step of your loop breaks that plan?",
 }
 REVEAL = (
-    "Here is the corrected loop:\n\n```python\nnums = [1, 2, 3]\ntotal = 0\n"
+    "Here is the fixed loop:\n\n```python\nnums = [1, 2, 3]\ntotal = 0\n"
     "for i in range(len(nums)):\n    total += nums[i]\n```\n\n"
-    "`range(len(nums) + 1)` made `i` reach 3, but the last valid index is 2. "
-    "Try it: what would you change if you wanted to add only the first two items?"
+    "`range(len(nums) + 1)` made `i` reach 3, but the last index is 2. "
+    "What would you change to add only the first two items?"
 )
 
 

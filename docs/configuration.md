@@ -37,7 +37,7 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 | Name | Default | Meaning |
 |---|---|---|
 | `INDEX_VERSION` | `v1` | Part of the Qdrant collection name (`cb_<corpus>_<version>`) and of answer and retrieval cache keys. Bump it after re-chunking or changing the embedding model |
-| `PROMPT_VERSION` | `p2` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
+| `PROMPT_VERSION` | `p3` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
 
 ### Pedagogy
 
@@ -45,6 +45,14 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 |---|---|---|
 | `LADDER_MAX_TURNS` | `4` | After this many hints on one problem the tutor offers the full answer |
 | `LADDER_MAX_SECONDS` | `600` | After this long on one problem the tutor offers the full answer |
+
+| `MAX_TOKENS_HINT` | `250` | Output token cap for hint replies. Backstop for the word limits in the prompts |
+| `MAX_TOKENS_EXPLAIN` | `320` | Output token cap for concept explanations |
+| `MAX_TOKENS_REVEAL` | `900` | Output token cap for full answers (code plus the short why) |
+| `MAX_TOKENS_REDIRECT` | `90` | Output token cap for off-topic redirects |
+
+The caps apply per mode, on every tier including fallbacks. A reply that hits one is cut off, so
+keep them above the prompt word limits.
 
 The tutor never reveals on its own; it offers, and the learner decides. See
 [pedagogy-policy.md](pedagogy-policy.md).
@@ -57,6 +65,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `QDRANT_URL` | none | Use a Qdrant server instead (also creates payload indexes) |
 | `RETRIEVE_K` | `30` | Candidates fetched from hybrid search |
 | `RERANK_TOP` | `5` | Chunks kept after reranking and given to the model |
+| `REFINE_TIMEOUT_S` | `0.3` | Time budget for the second retrieval (the classifier's query). On timeout the first result is kept and `refine_timeouts` in `/v1/metrics` goes up |
 | `RELEVANCE_THRESHOLD` | `0.15` | A reply is "grounded" only if the best chunk scores at least this. Meaningful with a real reranker (scores 0 to 1). The no-op reranker scores 1.0, so any hit counts as grounded |
 | `USE_CROSS_ENCODER` | `false` | Use the local cross-encoder reranker (needs `--extra rerank`; downloads `BAAI/bge-reranker-base`) |
 

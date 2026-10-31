@@ -308,10 +308,10 @@ Every error explanation uses a fixed short template to stay clear and concise:
 
 1. **What happens** (one sentence, learner's own names).
 2. **Why** (one sentence, the underlying concept).
-3. **Tiny trace** (3–5 lines showing variable values on a small input).
+3. **Tiny trace** (2–3 lines showing variable values on a small input).
 4. **Check question** (one question to confirm understanding).
 
-Constraints: ≤ 120 words, no unexplained jargon, no more than one new concept per turn.
+Constraints: ≤ 90 words at hint level 2 and ≤ 120 words in explanations and reveals (hint levels 0–1 ≤ 60, level 3 ≤ 110 plus pseudo-code), plain words, no unexplained jargon, no more than one new concept per turn. A per-mode output token cap backs the limits up in code.
 
 ### 8.4 Anti-frustration design (FR15)
 
