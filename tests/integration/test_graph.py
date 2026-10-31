@@ -91,7 +91,7 @@ async def test_model_outage_degrades_to_course_material(make_harness):
 
 
 async def test_an_empty_model_reply_counts_as_degraded(make_harness):
-    h = make_harness(standard=ScriptedChat([""]))
+    h = make_harness(standard=ScriptedChat(["", ""]))
     out = await h.turn("why does my loop crash", code=BUGGY)
     assert out["state"]["degraded"] is True and "can't reach the tutor model" in out["text"]
 
@@ -144,3 +144,30 @@ async def test_token_cap_follows_the_mode_not_the_tier(make_harness):
     assert standard.kwargs[1] == {"max_completion_tokens": s.max_tokens_explain}
     assert heavy.kwargs[0] == {"max_completion_tokens": s.max_tokens_reveal}
     assert fast.kwargs[0] == {"max_completion_tokens": s.max_tokens_redirect}
+
+
+async def test_an_empty_reply_is_retried_once_with_a_bigger_cap(make_harness):
+    model = ScriptedChat(["", "What is i on the last pass?"])
+    h = make_harness(standard=model)
+    out = await h.turn("why does my loop crash", code=BUGGY)
+    assert out["state"]["degraded"] is False
+    assert out["text"].startswith("What is i")
+    assert [k["max_completion_tokens"] for k in model.kwargs] == [250, 1000]
+    assert (await h.deps.metrics.snapshot())["empty_replies"] == 1
+
+
+async def test_two_empty_replies_degrade_as_before(make_harness):
+    model = ScriptedChat(["", ""])
+    h = make_harness(standard=model)
+    out = await h.turn("why does my loop crash", code=BUGGY)
+    assert out["state"]["degraded"] is True and "can't reach the tutor model" in out["text"]
+    assert (await h.deps.metrics.snapshot())["empty_replies"] == 1
+
+
+async def test_the_leak_guard_still_applies_to_the_retry(make_harness):
+    h = make_harness(
+        standard=ScriptedChat(["", "Look closely.\nfor i in range(len(nums)):\n    pass\n"])
+    )
+    out = await h.turn("fix it", code=BUGGY)
+    assert "range(len(nums))" not in out["text"]
+    assert out["state"]["guarded"] is True

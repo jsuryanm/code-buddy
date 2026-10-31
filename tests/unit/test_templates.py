@@ -68,7 +68,7 @@ def test_error_template_fits_the_name_concept_limit():
 def test_token_caps_default_per_mode():
     s = Settings()
     assert (s.max_tokens_hint, s.max_tokens_explain) == (250, 320)
-    assert (s.max_tokens_reveal, s.max_tokens_redirect) == (900, 90)
+    assert (s.max_tokens_reveal, s.max_tokens_redirect) == (1500, 90)
 
 
 def test_confirm_prompt_is_short_plain_and_writes_no_new_code():

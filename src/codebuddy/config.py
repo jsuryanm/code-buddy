@@ -28,8 +28,11 @@ class Settings(BaseSettings):
     # Output token caps per reply mode: a backstop for the word limits in the prompts
     max_tokens_hint: int = 250
     max_tokens_explain: int = 320
-    max_tokens_reveal: int = 900
+    max_tokens_reveal: int = 1500  # reasoning tiers need headroom
     max_tokens_redirect: int = 90
+
+    # Reasoning models only (gpt-5*, o1*, o3*, o4*): minimal, low, medium or high
+    reasoning_effort: str = "minimal"
 
     # Vector store: embedded path for dev, URL for a server
     qdrant_path: str = "data/index"

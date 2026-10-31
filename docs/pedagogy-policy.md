@@ -48,7 +48,7 @@ plus the pseudo-code, explanations at most 120, reveals keep a 120-word "why" pl
 redirects stay at two sentences.
 
 Word limits in a prompt are a request, not a guarantee, so the code adds a backstop: each model
-call gets `max_completion_tokens` for its mode (hint 250, explain 320, reveal 900, redirect 90;
+call gets `max_completion_tokens` for its mode (hint 250, explain 320, reveal 1500, redirect 90;
 settings `MAX_TOKENS_*`). The cap is passed per call, by mode and not by tier, and
 `RunnableWithFallbacks` hands the same kwargs to every fallback tier, so a fallback keeps it. A
 reply that hits the cap is cut off mid-sentence; the caps are set well above the word limits so

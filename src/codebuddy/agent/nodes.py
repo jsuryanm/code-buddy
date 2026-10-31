@@ -505,7 +505,6 @@ class TutorNodes:
         ]
 
         enforce = decision.mode is Mode.HINT and (decision.level or 0) < HintLevel.REVEAL
-        guard = StreamGuard(enforce=enforce, allow_pseudocode=decision.level is HintLevel.SCAFFOLD)
         parts: list[str] = []
         guarded = degraded = False
 
@@ -514,13 +513,36 @@ class TutorNodes:
                 parts.append(text)
                 writer({"type": "token", "text": text})
 
-        try:
+        async def attempt(max_tokens: int) -> object | None:
+            """Stream one call through a fresh guard; return the last chunk (for diagnostics)."""
+            guard = StreamGuard(
+                enforce=enforce, allow_pseudocode=decision.level is HintLevel.SCAFFOLD
+            )
+            last = None
             # Per-call kwarg: RunnableWithFallbacks passes it to every tier, so fallbacks keep it.
-            cap = {"max_completion_tokens": self._max_tokens(decision)}
+            cap = {"max_completion_tokens": max_tokens}
             async for chunk in self._tier(decision).astream(messages, **cap):
+                last = chunk
                 emit(guard.feed(_text(chunk)))
             emit(guard.flush())
-            if not parts:  # e.g. a reasoning model spent the whole token cap on reasoning
+            return last
+
+        try:
+            base = self._max_tokens(decision)
+            last = await attempt(base)
+            if not parts:
+                # A reasoning model can spend the whole cap on hidden reasoning. Retry once
+                # with more headroom; log metadata only, never prompt or learner text.
+                await self.d.metrics.incr("empty_replies")
+                log.warning(
+                    "empty model reply (mode=%s, cap=%d): finish_reason=%s usage=%s",
+                    decision.mode.value,
+                    base,
+                    (getattr(last, "response_metadata", None) or {}).get("finish_reason"),
+                    getattr(last, "usage_metadata", None),
+                )
+                await attempt(min(base * 4, 4000))
+            if not parts:
                 raise RuntimeError("the model returned an empty reply")
         except LeakDetected as leak:
             log.info("leak guard stopped a reply: %s", leak.reason)

@@ -48,15 +48,21 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 
 | `MAX_TOKENS_HINT` | `250` | Output token cap for hint replies. Backstop for the word limits in the prompts |
 | `MAX_TOKENS_EXPLAIN` | `320` | Output token cap for concept explanations |
-| `MAX_TOKENS_REVEAL` | `900` | Output token cap for full answers (code plus the short why) |
+| `MAX_TOKENS_REVEAL` | `1500` | Output token cap for full answers (code plus the short why). Default leaves headroom for a reasoning heavy tier |
 | `MAX_TOKENS_REDIRECT` | `90` | Output token cap for off-topic redirects |
 
 The caps apply per mode, on every tier including fallbacks. A reply that hits one is cut off, so
 keep them above the prompt word limits. The cap is sent as `max_completion_tokens`, which on
-reasoning models also counts the hidden reasoning tokens: a reasoning model can spend the whole cap
-thinking and return no text. An empty reply is treated as a degraded reply (the course-material
-fallback, `degraded: true`, the `degraded` counter). With reasoning models in a tier, raise the
-`MAX_TOKENS_*` values, or use non-reasoning models for the tiers.
+reasoning models also counts the hidden reasoning tokens, so a reasoning tier needs more headroom
+(hence the 1500 reveal default). Two safeguards: models whose ID starts with `gpt-5`, `o1`, `o3` or
+`o4` get `reasoning_effort` (below), and an empty reply is retried once with a cap of 4 times the
+original (at most 4000) before it degrades (course-material fallback, `degraded: true`, the
+`degraded` counter). Each empty first attempt bumps `empty_replies` and logs a warning with the
+mode, cap, finish reason and token usage (never prompt or learner text).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CODEBUDDY_REASONING_EFFORT` | `minimal` | `reasoning_effort` sent to reasoning models only: `minimal`, `low`, `medium` or `high`. Any other value falls back to `low`. Never sent to models like `gpt-4o-mini`, which reject it |
 
 The tutor never reveals on its own; it offers, and the learner decides. See
 [pedagogy-policy.md](pedagogy-policy.md).

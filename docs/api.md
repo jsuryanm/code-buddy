@@ -17,7 +17,7 @@ OpenAPI docs are served at `/docs`.
 | `POST /v1/memory/learners` | Mint a signed learner token for opt-in memory. Returns `{"learner_token"}`. 503 when memory is off |
 | `GET /v1/memory` | List what is remembered for the learner in header `X-Learner-Token`: `{"items": [{"kind", "text", "created_at"}]}` |
 | `DELETE /v1/memory` | Forget everything for the learner in header `X-Learner-Token`: `{"deleted": n}` |
-| `GET /v1/metrics` | Counters: turns, cache hits, guard stops, degraded replies, approvals, STT use, judge results, rate-limited requests, memory recalls, writes, and failures, and second-retrieval timeouts |
+| `GET /v1/metrics` | Counters: turns, cache hits, guard stops, degraded replies, approvals, STT use, judge results, rate-limited requests, memory recalls, writes, and failures, second-retrieval timeouts, and empty model replies (`empty_replies`) |
 
 When `CODEBUDDY_API_KEYS` is set every `/v1/*` route needs `Authorization: Bearer <key>` or
 `X-API-Key: <key>` (HTTP 401 otherwise). Requests over `CODEBUDDY_RATE_LIMIT_PER_MINUTE` get
