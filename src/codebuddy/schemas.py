@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import IntEnum, StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +57,7 @@ class Decision(BaseModel):
     can_show_answer: bool = False  # UI enables the Show-answer button
     offer_quiz: bool = False  # UI shows the Try-a-quiz button (after a fix is detected)
     quiz_concept: str | None = None  # concept name of the fixed bug, never the pattern id
+    after_fix: bool = False  # CONFIRM follow-up: acknowledge the learner's explanation
     quiz: dict | None = None  # {"index", "total", "difficulty", "score"} while a quiz runs
     reasons: list[str] = Field(default_factory=list)
 
@@ -94,6 +96,7 @@ class TurnRequest(BaseModel):
     code: str | None = None
     language: str = "python"
     learner_id: str | None = Field(default=None, pattern=LEARNER_TOKEN)
+    action: Literal["skip", "stop"] | None = None  # the UI's quiz buttons; typed text is a message
 
 
 class ShowAnswerRequest(BaseModel):

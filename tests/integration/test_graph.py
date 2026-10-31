@@ -42,13 +42,14 @@ async def test_leak_guard_replaces_code_with_a_safe_question(make_harness):
     assert out["state"]["guarded"] is True
 
 
-async def test_answer_is_offered_after_two_hints_but_hinting_continues(make_harness):
-    h = make_harness(standard=ScriptedChat([f"Hint {i}?" for i in range(6)]))
+async def test_answer_is_offered_after_five_hints_but_hinting_continues(make_harness):
+    h = make_harness(standard=ScriptedChat([f"Hint {i}?" for i in range(8)]))
     # Different code each turn so the repeated-submission signal stays out of the way.
-    metas = [(await h.turn("still stuck", code=BUGGY + f"# try {i}\n"))["meta"] for i in range(5)]
-    assert [m["offer_answer"] for m in metas] == [False, False, True, True, True]
-    assert [m["level"] for m in metas] == [0, 1, 2, 3, 3]  # never reveals on its own
-    assert metas[1]["can_show_answer"] and metas[2]["can_show_answer"]
+    metas = [(await h.turn("still stuck", code=BUGGY + f"# try {i}\n"))["meta"] for i in range(7)]
+    assert [m["offer_answer"] for m in metas] == [False] * 5 + [True, True]
+    assert [m["level"] for m in metas] == [0, 1, 2, 3, 3, 3, 3]  # never reveals on its own
+    # Show answer is enabled from the 5th tutor turn (after 4 hints).
+    assert [m["can_show_answer"] for m in metas] == [False] * 4 + [True] * 3
 
 
 async def test_repeated_identical_submissions_offer_the_answer(make_harness):
@@ -87,6 +88,12 @@ async def test_model_outage_degrades_to_course_material(make_harness):
     assert out["state"]["degraded"] is True
     assert "can't reach the tutor model" in out["text"]
     assert out["state"]["progress"].hints_given == 1
+
+
+async def test_an_empty_model_reply_counts_as_degraded(make_harness):
+    h = make_harness(standard=ScriptedChat([""]))
+    out = await h.turn("why does my loop crash", code=BUGGY)
+    assert out["state"]["degraded"] is True and "can't reach the tutor model" in out["text"]
 
 
 async def test_concept_answers_are_cached_but_hints_are_not(make_harness):

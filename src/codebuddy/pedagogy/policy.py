@@ -10,6 +10,7 @@ from codebuddy.pedagogy.frustration import Signals
 from codebuddy.schemas import Decision, HintLevel, Intent, Mode, SessionProgress
 
 _LAST_HINT = HintLevel.SCAFFOLD
+SHOW_AFTER_HINTS = 4  # the Show answer button is enabled after this many hints
 
 
 FIX_KEEPS = 0.6  # a fix keeps at least this share of the statements the buggy code had
@@ -46,10 +47,26 @@ def decide_mode(
     signals: Signals,
     now: float,
     *,
-    max_turns: int = 3,
+    max_turns: int = 6,
     max_seconds: int = 600,
 ) -> Decision:
-    can_show = progress.hints_given >= 1
+    decision = _decide(intent, progress, signals, now, max_turns, max_seconds)
+    # A fixed bug's quiz stays on offer until it starts, a new problem, or a new bug.
+    if progress.quiz_offer in PATTERNS and progress.quiz is None:
+        decision.offer_quiz = True
+        decision.quiz_concept = PATTERNS[progress.quiz_offer].concept
+    return decision
+
+
+def _decide(
+    intent: Intent,
+    progress: SessionProgress,
+    signals: Signals,
+    now: float,
+    max_turns: int,
+    max_seconds: int,
+) -> Decision:
+    can_show = progress.hints_given >= SHOW_AFTER_HINTS
 
     if intent is Intent.SHOW_ANSWER:
         # An explicit request is always honored, even on the first turn.
@@ -67,6 +84,9 @@ def decide_mode(
             quiz_concept=PATTERNS[fixed].concept if fixed else None,
             reasons=["bug fixed"],
         )
+    if signals.after_fix and intent is Intent.DEBUG_HELP:
+        # The learner answered the "why does your fix work?" question with the same fixed code.
+        return Decision(mode=Mode.CONFIRM, after_fix=True, reasons=["explained the fix"])
     if intent is Intent.OFF_TOPIC:
         return Decision(mode=Mode.REDIRECT, can_show_answer=can_show, reasons=["off topic"])
     if intent is Intent.CONCEPT_QUESTION:

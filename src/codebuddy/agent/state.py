@@ -26,12 +26,14 @@ class TutorState(TypedDict, total=False):
     code: str | None
     language: str
     learner_id: str | None
+    action: str | None  # "skip" or "stop" from the UI's quiz buttons
     # working state
     foreign: bool  # the session is bound to another learner: leave its history alone
     code_changed: bool  # the code differs from the last code sent (for fix detection)
     quiz_turn: bool  # this turn answered a running quiz (graded by code)
     scripted: str | None  # a reply written by code (quiz), streamed without a model call
     quiz_code: str | None  # the next quiz question's snippet, sent to the UI's code box
+    quiz_prior: dict | None  # the quiz before this turn's grading (kept if the hint degrades)
     progress: SessionProgress
     features: CodeFeatures
     cache_key: str | None

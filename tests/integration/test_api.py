@@ -54,12 +54,15 @@ async def test_show_answer_endpoint_reveals(client_for):
 
 
 async def test_session_endpoint_tracks_progress(client_for):
-    client = client_for(standard=ScriptedChat(["Q?"]))
+    client = client_for(standard=ScriptedChat(["Q?"] * 4))
     async with client:
-        before = (await client.get("/v1/session/c")).json()
-        await client.post("/v1/turn", json={"session_id": "c", "message": "why", "code": BUGGY})
+        seen = []
+        for i in range(4):
+            seen.append((await client.get("/v1/session/c")).json()["can_show_answer"])
+            code = BUGGY + f"# try {i}\n"
+            await client.post("/v1/turn", json={"session_id": "c", "message": "why", "code": code})
         after = (await client.get("/v1/session/c")).json()
-    assert before["can_show_answer"] is False and after["can_show_answer"] is True
+    assert seen == [False] * 4 and after["can_show_answer"] is True  # after the 4th hint
 
 
 async def test_empty_message_is_rejected_and_health_works(client_for):

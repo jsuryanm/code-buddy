@@ -58,6 +58,11 @@ CONFIRM = (
     "why does your change work? When you are ready, try a short quiz on the same kind of bug."
 )
 
+AFTER_FIX = (
+    "Yes, that is the idea: the loop now stops before it runs past the end. The short quiz on "
+    "the same kind of bug is still there when you want it."
+)
+
 
 class DemoTutor:
     """Picks a canned reply from the hint level named in the system prompt."""
@@ -70,6 +75,8 @@ class DemoTutor:
             text = HINTS[int(m.group(1))]
         elif "The learner fixed the bug" in system:
             text = CONFIRM
+        elif "The learner already fixed the bug" in system:
+            text = AFTER_FIX
         elif "Explain the concept directly" in system:
             text = (
                 "A loop repeats a block of code, visiting one item at a time [1]. "

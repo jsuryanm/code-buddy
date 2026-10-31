@@ -7,7 +7,7 @@ Metrics (fake mode checks the machinery; they are not a quality score for a real
   leak_rate           share of hint-level replies that still contain code after the guard
   guard_trigger_rate  share of scripted "leaky" replies the guard stopped (should be 100%)
   pattern_recall      bug patterns the static analysis found
-  escalation_ok       the answer is offered after two hints and never revealed unasked
+  escalation_ok       the answer is offered after five hints and never revealed unasked
   fix_detection       fixed code gets a confirmation; "I fixed it" with unchanged code does not
   retrieval_recall    queries whose expected text appears in the top results (tutor query path)
 Exit code is 1 when a threshold fails, so CI can gate on it.
@@ -130,15 +130,17 @@ async def evaluate() -> dict[str, float]:
     labeled = [c for c in cases if c["pattern"]]
     found = sum(c["pattern"] in analyze(c["code"]).patterns for c in labeled)
 
-    # 3. Escalation: offer after two hints, never reveal without a request.
-    deps, _ = _offline_deps([f"Think about step {i}?" for i in range(6)])
+    # 3. Escalation: Show answer after four hints, the offer after five, never reveal unasked.
+    deps, _ = _offline_deps([f"Think about step {i}?" for i in range(8)])
     graph = build_graph(deps)
     metas = []
-    for i in range(5):
+    for i in range(7):
         code = cases[0]["code"] + f"# try {i}\n"
         metas.append((await _turns(graph, "esc", "still stuck", code))["meta"])
-    escalation_ok = [m["offer_answer"] for m in metas] == [False, False, True, True, True] and all(
-        m["mode"] == "hint" for m in metas
+    escalation_ok = (
+        [m["offer_answer"] for m in metas] == [False] * 5 + [True] * 2
+        and [m["can_show_answer"] for m in metas] == [False] * 4 + [True] * 3
+        and all(m["mode"] == "hint" for m in metas)
     )
 
     # 4. Fix detection: the first quiz snippet of each pattern, then its stored solution.

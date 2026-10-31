@@ -23,9 +23,21 @@ def test_ladder_advances_but_never_reveals_by_itself(given, expected):
     assert d.mode is Mode.HINT and d.level == expected
 
 
-def test_show_answer_available_after_first_hint():
-    d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=1), Signals(), now=0)
-    assert d.can_show_answer
+@pytest.mark.parametrize("given,enabled", [(0, False), (1, False), (3, False), (4, True)])
+def test_show_answer_is_enabled_after_the_fourth_hint(given, enabled):
+    d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=given), Signals(), now=0)
+    assert d.can_show_answer is enabled
+
+
+@pytest.mark.parametrize(
+    "signals,started",
+    [(Signals(give_up_phrase=True), 0.0), (Signals(repeated_submission=True), 0.0),
+     (Signals(), 100.0)],
+)  # fmt: skip
+def test_early_triggers_enable_show_answer_before_four_hints(signals, started):
+    p = progress(hints_given=1, started_at=started)
+    d = decide_mode(Intent.DEBUG_HELP, p, signals, now=started + 601)
+    assert d.can_show_answer and d.offer_answer
 
 
 def test_explicit_request_reveals_even_on_first_turn():
@@ -38,20 +50,23 @@ def test_turn_cap_offers_answer():
     assert d.offer_answer and d.can_show_answer
 
 
-def test_ladder_turn_cap_defaults_to_three():
-    assert Settings().ladder_max_turns == 3
+def test_ladder_turn_cap_defaults_to_six():
+    assert Settings().ladder_max_turns == 6
     assert not decide_mode(
-        Intent.DEBUG_HELP, progress(hints_given=2), Signals(), now=0
+        Intent.DEBUG_HELP, progress(hints_given=5), Signals(), now=0
     ).offer_answer
-    assert decide_mode(Intent.DEBUG_HELP, progress(hints_given=3), Signals(), now=0).offer_answer
+    assert decide_mode(Intent.DEBUG_HELP, progress(hints_given=6), Signals(), now=0).offer_answer
 
 
-@pytest.mark.parametrize("given,offered", [(0, False), (1, False), (2, True), (3, True)])
-def test_answer_is_offered_after_two_hints(given, offered):
+@pytest.mark.parametrize(
+    "given,offered", [(0, False), (1, False), (2, False), (4, False), (5, True), (6, True)]
+)
+def test_answer_is_offered_after_five_hints(given, offered):
     signals = detect_signals("still stuck", progress(hints_given=given))
     assert signals.hints_without_progress is offered
     d = decide_mode(Intent.DEBUG_HELP, progress(hints_given=given), signals, now=0)
-    assert d.offer_answer is offered and d.can_show_answer is (given >= 1)
+    assert d.offer_answer is offered and d.can_show_answer is (given >= 4)
+    assert d.level == min(given, 3)  # hints 4 and 5 stay at level 3
 
 
 def test_time_cap_offers_answer():
@@ -86,7 +101,7 @@ def test_does_not_treat_ordinary_question_as_answer_request():
 
 
 def test_signals_from_progress_and_phrases():
-    s = detect_signals("I give up", progress(hints_given=2, repeated_submissions=2))
+    s = detect_signals("I give up", progress(hints_given=5, repeated_submissions=2))
     assert s.give_up_phrase and s.hints_without_progress and s.repeated_submission
     assert not detect_signals("hello", progress()).any
 
@@ -167,3 +182,28 @@ def test_explicit_reveal_beats_fixed_and_a_new_problem_is_not_a_fix():
 def test_fixed_is_not_a_frustration_signal():
     assert not Signals(fixed=True).any
     assert detect_signals("ok", progress(), fixed=True).fixed
+
+
+# -- the quiz offer persists -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("intent", [Intent.DEBUG_HELP, Intent.CONCEPT_QUESTION, Intent.OFF_TOPIC])
+def test_a_pending_quiz_offer_is_repeated_on_every_reply(intent):
+    p = progress(quiz_offer="off_by_one_range")
+    d = decide_mode(intent, p, Signals(), now=0)
+    assert d.offer_quiz and d.quiz_concept == "loop bounds"
+
+
+def test_no_quiz_offer_while_a_quiz_runs_or_without_a_fix():
+    running = progress(quiz_offer="off_by_one_range", quiz={"pattern": "off_by_one_range"})
+    assert not decide_mode(Intent.CONCEPT_QUESTION, running, Signals(), now=0).offer_quiz
+    assert not decide_mode(Intent.DEBUG_HELP, progress(), Signals(), now=0).offer_quiz
+
+
+def test_the_reflection_after_a_fix_is_acknowledged_not_hinted():
+    p = progress(quiz_offer="off_by_one_range")
+    d = decide_mode(Intent.DEBUG_HELP, p, Signals(after_fix=True), now=0)
+    assert d.mode is Mode.CONFIRM and d.after_fix and d.level is None
+    assert d.offer_quiz and not d.offer_answer
+    concept = decide_mode(Intent.CONCEPT_QUESTION, p, Signals(after_fix=True), now=0)
+    assert concept.mode is Mode.EXPLAIN  # a real question still gets an answer

@@ -19,10 +19,10 @@ class Settings(BaseSettings):
 
     # Versions folded into cache keys so stale answers invalidate automatically
     index_version: str = "v1"
-    prompt_version: str = "p4"
+    prompt_version: str = "p5"
 
     # Hint ladder escalation (spec 8.4)
-    ladder_max_turns: int = 3
+    ladder_max_turns: int = 6
     ladder_max_seconds: int = 600
 
     # Output token caps per reply mode: a backstop for the word limits in the prompts
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     retrieve_k: int = 30
     rerank_top: int = 5
     relevance_threshold: float = 0.15
-    refine_timeout_s: float = 0.3  # budget for the second (classifier query) retrieval
+    refine_timeout_s: float = 0.5  # wait for the second retrieval; it finishes in the background
     use_cross_encoder: bool = False  # needs: uv sync --extra rerank
 
     # Speech-to-text (Groq Whisper, optional OpenAI fallback)

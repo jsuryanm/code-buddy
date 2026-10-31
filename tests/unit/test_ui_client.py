@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -217,3 +219,16 @@ def test_stream_quiz_posts_the_session_and_optional_learner():
     assert seen["path"] == "/v1/quiz" and seen["body"] == '{"session_id":"s"}'
     list(client.stream_quiz("s", learner_id="a" * 16))
     assert f'"learner_id":"{"a" * 16}"' in seen["body"]
+
+
+def test_stream_turn_sends_the_quiz_action_only_when_set():
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.read()))
+        return httpx.Response(200, text='event: done\ndata: {"ok": true}\n\n')
+
+    client = _client(handler)
+    list(client.stream_turn("s", "hi", None))
+    list(client.stream_turn("s", "Skip this question.", "x = 1", action="skip"))
+    assert "action" not in bodies[0] and bodies[1]["action"] == "skip"

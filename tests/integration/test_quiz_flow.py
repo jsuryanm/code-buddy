@@ -3,9 +3,11 @@ import json
 import httpx
 import pytest
 
+from codebuddy.agent.state import Classification
 from codebuddy.api.app import create_app
 from codebuddy.pedagogy.guard import StreamGuard
-from codebuddy.pedagogy.quiz import BANK, NUDGE
+from codebuddy.pedagogy.quiz import BANK, DIFFERENT, NUDGE
+from codebuddy.schemas import Intent, PcditStage
 from tests.helpers import ScriptedChat
 
 BUGGY = "nums = [1, 2, 3]\ntotal = 0\nfor i in range(len(nums) + 1):\n    total += nums[i]\n"
@@ -75,6 +77,44 @@ async def test_deleting_or_replacing_the_code_is_not_a_fix(make_harness, code):
     h = make_harness(standard=ScriptedChat(["Q?", "Q?"]))
     await h.turn("my sum crashes", code=BUGGY)
     assert (await h.turn("fixed?", code=code))["meta"]["mode"] == "hint"
+
+
+async def test_the_quiz_offer_persists_and_the_reflection_is_acknowledged(make_harness):
+    model = ScriptedChat(["Q?", "You fixed it. Why?", "Right, and the quiz is still there."])
+    h = make_harness(standard=model)
+    await h.turn("my sum crashes", code=BUGGY)
+    assert (await h.turn("is this right now?", code=FIXED))["meta"]["mode"] == "confirm"
+    out = await h.turn("because range stops before len", code=FIXED)
+    meta = out["meta"]
+    assert meta["mode"] == "confirm" and meta["level"] is None
+    assert meta["offer_quiz"] is True and meta["quiz_concept"] == "loop bounds"
+    assert "The learner already fixed the bug" in model.calls[-1][0][1]
+    progress = out["state"]["progress"]
+    assert progress.hints_given == 0 and progress.quiz_offer == "off_by_one_range"
+    concept = await h.turn("what is a list?")  # another kind of reply still offers the quiz
+    assert concept["meta"]["mode"] == "explain" and concept["meta"]["offer_quiz"] is True
+
+
+async def test_new_buggy_code_or_a_new_problem_withdraws_the_quiz_offer(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?", "Fixed.", "Q?"]))
+    await h.turn("my sum crashes", code=BUGGY)
+    await h.turn("now?", code=FIXED)
+    out = await h.turn("new one", code="list = [1]\nprint(list)\n")
+    assert out["meta"]["mode"] == "hint" and out["meta"]["offer_quiz"] is False
+    assert out["state"]["progress"].quiz_offer == ""
+
+
+async def test_a_new_problem_withdraws_the_quiz_offer(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?", "Fixed.", "Q?"]))
+    await h.turn("my sum crashes", code=BUGGY)
+    await h.turn("now?", code=FIXED)
+
+    async def problem_start(message, code, progress):
+        return Classification(intent=Intent.PROBLEM_START, stage=PcditStage.P, search_query=message)
+
+    h.deps.classifier.classify = problem_start
+    out = await h.turn("new exercise: reverse a string")
+    assert out["meta"]["offer_quiz"] is False and out["state"]["progress"].quiz_offer == ""
 
 
 # -- the quiz over HTTP ------------------------------------------------------------------
@@ -232,3 +272,68 @@ async def test_quiz_needs_the_api_key_when_configured(quiz_client):
     client, _ = quiz_client(api_keys="secret")
     async with client:
         assert (await client.post("/v1/quiz", json={"session_id": "q"})).status_code == 401
+
+
+async def test_quiz_again_while_one_runs_resends_the_current_question(quiz_client):
+    client, h = quiz_client()
+    async with client:
+        await fix_then_quiz(client)
+        await answer(client, QUIZ[0].solution)  # now on question 2
+        r = await client.post("/v1/quiz", json={"session_id": "q"})
+    meta, text = meta_and_text(r.text)
+    assert meta["quiz"]["index"] == 1 and meta["quiz"]["score"] == 1
+    assert meta["quiz_code"] == QUIZ[1].snippet and "Quiz 2 of 5" in text
+    progress = await h.deps.sessions.load("q")
+    assert progress.quiz["index"] == 1 and progress.quiz_offer == ""
+
+
+async def test_starting_a_quiz_withdraws_the_offer(quiz_client):
+    client, h = quiz_client()
+    async with client:
+        await fix_then_quiz(client)
+        assert (await h.deps.sessions.load("q")).quiz_offer == ""
+        await answer(client, "", "stop quiz")
+        r = await client.post("/v1/quiz", json={"session_id": "q"})
+    assert r.status_code == 404
+
+
+async def test_a_degraded_quiz_hint_does_not_use_up_the_try(quiz_client):
+    client, h = quiz_client()
+    async with client:
+        await fix_then_quiz(client)
+        h.tiers.standard.fail = True
+        r = await answer(client, QUIZ[0].snippet + "# hm\n")
+    assert "can't reach the tutor model" in r.text
+    assert (await h.deps.sessions.load("q")).quiz["tries"] == 0
+
+
+async def test_different_code_is_not_graded_over_http(quiz_client):
+    client, h = quiz_client()
+    async with client:
+        await fix_then_quiz(client)
+        meta, text = meta_and_text((await answer(client, "pass\n")).text)
+    assert text == DIFFERENT and meta["mode"] == "quiz"
+    assert (await h.deps.sessions.load("q")).quiz["tries"] == 0
+
+
+async def test_a_question_about_unchanged_quiz_code_gets_one_hint(quiz_client):
+    model = ScriptedChat(["Q?", "Fixed. Why?", "What is the last index?"])
+    client, h = quiz_client(standard=model)
+    async with client:
+        await fix_then_quiz(client)
+        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet, "what is wrong?")).text)
+    assert meta["mode"] == "hint" and meta["level"] == 0 and text == "What is the last index?"
+    assert (await h.deps.sessions.load("q")).quiz["tries"] == 0
+
+
+async def test_skip_and_stop_buttons_send_an_action(quiz_client):
+    client, h = quiz_client()
+    async with client:
+        await fix_then_quiz(client)
+        body = {"session_id": "q", "message": "Skip this question.", "code": QUIZ[0].snippet}
+        r = await client.post("/v1/turn", json={**body, "action": "skip"})
+        assert QUIZ[0].solution in meta_and_text(r.text)[1]
+        bad = await client.post("/v1/turn", json={**body, "action": "restart"})
+        assert bad.status_code == 422
+        await client.post("/v1/turn", json={**body, "message": "Stop.", "action": "stop"})
+    assert (await h.deps.sessions.load("q")).quiz is None

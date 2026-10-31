@@ -24,7 +24,7 @@ from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
 from codebuddy.memory.types import Episode
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
-from codebuddy.pedagogy.policy import decide_mode, fixed_it, shape
+from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS, decide_mode, fixed_it, shape
 from codebuddy.pedagogy.quiz import advance, quiz_meta
 from codebuddy.pedagogy.templates import fallback_text, system_prompt, user_prompt
 from codebuddy.rag.query import build_query, rrf_merge
@@ -76,6 +76,12 @@ def runtime_findings(runtime: dict | None, cases: list[dict]) -> list[str]:
                 + "; ".join(case["try_these"][:4])
             )
     return notes
+
+
+def _ignore_result(task: asyncio.Task) -> None:
+    """A background search we stopped waiting for: read its outcome so nothing is reported."""
+    if not task.cancelled():
+        task.exception()
 
 
 class TutorNodes:
@@ -176,7 +182,9 @@ class TutorNodes:
         quiz = state["progress"].quiz
         if quiz is None:
             return None
-        return advance(quiz, state["message"], state.get("features"), state.get("code"))
+        return advance(
+            quiz, state["message"], state.get("features"), state.get("code"), state.get("action")
+        )
 
     def route_after_cache(self, state: TutorState):
         if state.get("cached_reply"):
@@ -190,7 +198,7 @@ class TutorNodes:
         progress = state["progress"]
         decision = Decision(
             mode=Mode.EXPLAIN,
-            can_show_answer=progress.hints_given >= 1,
+            can_show_answer=progress.hints_given >= SHOW_AFTER_HINTS,
             reasons=["answer cache hit"],
         )
         emit_step(writer, "check_cache", "done")
@@ -211,6 +219,7 @@ class TutorNodes:
             progress.hints_given = 0
             progress.started_at = 0.0
             progress.repeated_submissions = 0
+            progress.quiz_offer = ""  # a quiz on the last bug is no longer on offer
         return {"classification": cls, "progress": progress}
 
     def _query(self, text: str, state: TutorState, concepts: list[str] | None = None) -> str:
@@ -267,12 +276,15 @@ class TutorNodes:
         query = self._query(cls.search_query.strip(), state, cls.concepts)
         if keys.normalize(query) == keys.normalize(self._query(state["message"], state)):
             return {}
+        # Shielded and tracked: on a timeout the search keeps running in the background, so it
+        # still warms the L3 and L4 caches, and shutdown waits for it.
+        task = self.d.spawn(self.d.retriever.retrieve(query))
         try:
             second = await asyncio.wait_for(
-                self.d.retriever.retrieve(query),  # L3 and L4 caches apply
-                timeout=self.d.settings.refine_timeout_s,
+                asyncio.shield(task), timeout=self.d.settings.refine_timeout_s
             )
         except TimeoutError:
+            task.add_done_callback(_ignore_result)
             log.debug("refined retrieval timed out, keeping the first result")
             await self.d.metrics.incr("refine_timeouts")
             return {}
@@ -299,6 +311,7 @@ class TutorNodes:
         if step is not None:
             # A quiz answer: graded by code. Only a first wrong try reaches the model, as one
             # guarded level-0 hint; everything else is written by code (pedagogy/quiz.py).
+            update["quiz_prior"] = progress.quiz  # restored if the one hint degrades
             progress.quiz = step.quiz
             update |= {"quiz_turn": True, "scripted": step.text, "quiz_code": step.code}
             if step.text is None:
@@ -308,11 +321,16 @@ class TutorNodes:
             else:
                 decision = Decision(mode=Mode.QUIZ, reasons=["quiz: graded"])
         else:
-            fixed = fixed_it(progress, features, bool(state.get("code_changed")))
+            changed = bool(state.get("code_changed"))
+            if changed and features and features.patterns:
+                progress.quiz_offer = ""  # new code with a new bug: the old quiz offer is gone
+            fixed = fixed_it(progress, features, changed)
+            # After a fix, the learner's answer to "why does it work?" comes with the same code.
+            after_fix = bool(progress.quiz_offer) and progress.quiz is None and not changed
             decision = decide_mode(
                 state["classification"].intent,
                 progress,
-                detect_signals(state["message"], progress, fixed=fixed),
+                detect_signals(state["message"], progress, fixed=fixed, after_fix=after_fix),
                 self.d.clock(),
                 max_turns=s.ladder_max_turns,
                 max_seconds=s.ladder_max_seconds,
@@ -502,6 +520,8 @@ class TutorNodes:
             async for chunk in self._tier(decision).astream(messages, **cap):
                 emit(guard.feed(_text(chunk)))
             emit(guard.flush())
+            if not parts:  # e.g. a reasoning model spent the whole token cap on reasoning
+                raise RuntimeError("the model returned an empty reply")
         except LeakDetected as leak:
             log.info("leak guard stopped a reply: %s", leak.reason)
             guarded = True
@@ -587,7 +607,10 @@ class TutorNodes:
         had_history = bool(progress.history)  # the prompt depended on earlier turns
         hints_before = progress.hints_given
         if state.get("quiz_turn"):
-            pass  # the ladder stays reset during a quiz; the quiz has its own one hint
+            # The ladder stays reset during a quiz; the quiz has its own one hint. A hint that
+            # degraded (model unavailable) does not use up the learner's try.
+            if state.get("degraded"):
+                progress.quiz = state.get("quiz_prior")
         elif decision.mode is Mode.HINT:
             progress.hints_given += 1
             progress.started_at = progress.started_at or self.d.clock()
@@ -595,7 +618,7 @@ class TutorNodes:
             if decision.mode is Mode.REVEAL:
                 progress.reveals += 1
             else:  # solved: a quiz on that bug is now on offer
-                progress.quiz_offer = next(iter(progress.last_patterns), "")
+                progress.quiz_offer = next(iter(progress.last_patterns), progress.quiz_offer)
             progress.hints_given = 0
             progress.started_at = 0.0
             progress.repeated_submissions = 0

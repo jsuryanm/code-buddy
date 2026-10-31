@@ -123,6 +123,13 @@ CONFIRM_RULE = (
     "works. Then mention that a short quiz on the same kind of bug is available."
 )
 
+AFTER_FIX_RULE = (
+    "The learner already fixed the bug and is now explaining their fix or replying to you. Use "
+    "at most 40 words, plain words. Acknowledge what they said in one or two sentences; if "
+    "their reason is off, correct it gently in one sentence (do not write new or corrected "
+    "code). Then say the short quiz on the same kind of bug is still available."
+)
+
 OFFER_LINE = (
     "End by saying, warmly, that they can press 'Show answer' whenever they want the full "
     "solution, and that struggling with this is normal."
@@ -142,7 +149,7 @@ def system_prompt(decision: Decision, stage: PcditStage) -> str:
         parts.append(LEVEL_RULES[HintLevel.REVEAL])
         parts.append(REVEAL_TEMPLATE)
     elif decision.mode is Mode.CONFIRM:
-        parts.append(CONFIRM_RULE)
+        parts.append(AFTER_FIX_RULE if decision.after_fix else CONFIRM_RULE)
     elif decision.mode is Mode.EXPLAIN:
         parts.append(
             "Explain the concept directly and concisely (at most 120 words) from the context. "

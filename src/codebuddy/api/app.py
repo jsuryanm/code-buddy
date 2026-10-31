@@ -36,7 +36,9 @@ from codebuddy.cache import keys
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
+from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS
 from codebuddy.pedagogy.quiz import BANK, new_quiz, question_text, quiz_meta
+from codebuddy.pedagogy.quiz import current as current_item
 from codebuddy.schemas import (
     LEARNER_TOKEN,
     ApproveRequest,
@@ -266,11 +268,18 @@ def create_app(
         )
 
     def turn_events(
-        session_id: str, message: str, code: str | None, language: str, learner_id: str | None
+        session_id: str,
+        message: str,
+        code: str | None,
+        language: str,
+        learner_id: str | None,
+        action: str | None = None,
     ):
         inputs = {"session_id": session_id, "message": message, "code": code, "language": language}
         if learner_id:
             inputs["learner_id"] = learner_id
+        if action:
+            inputs["action"] = action
         return run_turn(app.state.graph, inputs, new_turn_id())
 
     @app.post("/v1/turn")
@@ -278,7 +287,9 @@ def create_app(
         if not req.message.strip():
             raise HTTPException(422, "message must not be empty")
         learner_id = await turn_learner(req.session_id, req.learner_id, key)
-        events = turn_events(req.session_id, req.message, req.code, req.language, learner_id)
+        events = turn_events(
+            req.session_id, req.message, req.code, req.language, learner_id, req.action
+        )
         return stream_response(events, req.session_id, req.code)
 
     @app.post("/v1/show-answer")
@@ -292,15 +303,19 @@ def create_app(
     @app.post("/v1/quiz")
     async def quiz(req: QuizRequest, key: str | None = Depends(guard)):
         """Start a five-question quiz on the bug the learner just fixed. Written by code from
-        the hand-checked bank in pedagogy/quiz.py: no model call. Answers come in as turns."""
+        the hand-checked bank in pedagogy/quiz.py: no model call. Answers come in as turns.
+        While a quiz runs, this sends the current question again instead of restarting."""
         await turn_learner(req.session_id, req.learner_id, key)
         d = current()
         progress = await d.sessions.load(req.session_id)
-        if progress.quiz_offer not in BANK:
-            raise HTTPException(404, "Nothing to quiz on yet: fix a bug first")
-        progress.quiz = new_quiz(progress.quiz_offer)
-        progress.last_patterns = []  # quiz code never counts as a fix of the learner's own bug
-        progress.hints_given, progress.started_at, progress.repeated_submissions = 0, 0.0, 0
+        if progress.quiz is None:
+            if progress.quiz_offer not in BANK:
+                raise HTTPException(404, "Nothing to quiz on yet: fix a bug first")
+            progress.quiz = new_quiz(progress.quiz_offer)
+            progress.quiz_offer = ""  # taken up: not offered again
+            # Quiz code never counts as a fix of the learner's own bug.
+            progress.last_patterns, progress.last_shape = [], None
+            progress.hints_given, progress.started_at, progress.repeated_submissions = 0, 0.0, 0
         text = question_text(progress.quiz)
         at = str(d.clock())
         progress.history = [
@@ -310,7 +325,7 @@ def create_app(
         ][-HISTORY_TURNS:]
         await d.sessions.save(progress)
         decision = Decision(mode=Mode.QUIZ, quiz=quiz_meta(progress.quiz))
-        snippet = BANK[progress.quiz["pattern"]][0].snippet
+        snippet = current_item(progress.quiz).snippet
 
         async def events() -> AsyncIterator[dict]:
             yield TutorNodes._meta(decision, progress.stage.value, quiz_code=snippet)
@@ -376,7 +391,7 @@ def create_app(
             "stage": progress.stage.value,
             "hints_given": progress.hints_given,
             "reveals": progress.reveals,
-            "can_show_answer": progress.hints_given >= 1,
+            "can_show_answer": progress.hints_given >= SHOW_AFTER_HINTS,
             "run_permission": progress.run_permission,
         }
 

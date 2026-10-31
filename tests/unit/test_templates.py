@@ -32,7 +32,7 @@ def test_hint_levels_add_depth_step_by_step():
 
 
 def test_prompt_version_was_bumped_with_the_prompt_change():
-    assert Settings().prompt_version == "p4"
+    assert Settings().prompt_version == "p5"
 
 
 LIMITS = {
@@ -76,3 +76,10 @@ def test_confirm_prompt_is_short_plain_and_writes_no_new_code():
     assert STYLE_RULE in prompt and "at most 60 words" in prompt
     assert "why the fix works" in prompt and "quiz" in prompt
     assert "do not write new or corrected code" in prompt
+
+
+def test_the_reply_after_a_fix_acknowledges_it_and_asks_nothing_new():
+    prompt = system_prompt(Decision(mode=Mode.CONFIRM, after_fix=True), PcditStage.T)
+    assert STYLE_RULE in prompt and "at most 40 words" in prompt
+    assert "quiz" in prompt and "do not write new or corrected code" in prompt
+    assert "why the fix works" not in prompt  # it was already asked

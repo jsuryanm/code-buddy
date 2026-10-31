@@ -30,6 +30,7 @@ class Signals:
     repeated_submission: bool = False
     hints_without_progress: bool = False
     fixed: bool = False  # the learner fixed the bug (pedagogy.policy.fixed_it); not frustration
+    after_fix: bool = False  # a quiz is on offer and the fixed code came back unchanged
 
     @property
     def any(self) -> bool:
@@ -49,10 +50,13 @@ def skips_question(message: str) -> bool:
     return bool(_SKIP_QUESTION.search(message))
 
 
-def detect_signals(message: str, progress: SessionProgress, fixed: bool = False) -> Signals:
+def detect_signals(
+    message: str, progress: SessionProgress, fixed: bool = False, after_fix: bool = False
+) -> Signals:
     return Signals(
         give_up_phrase=bool(_GIVE_UP.search(message)),
         repeated_submission=progress.repeated_submissions >= 2,
-        hints_without_progress=progress.hints_given >= 2,  # offer the answer after 2 hints
+        hints_without_progress=progress.hints_given >= 5,  # offer the answer after 5 hints
         fixed=fixed,
+        after_fix=after_fix,
     )

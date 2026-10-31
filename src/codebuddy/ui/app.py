@@ -29,6 +29,7 @@ QUIZ_MESSAGES = {
     "skip_question": "Skip this question.",
     "stop_quiz": "Stop the quiz.",
 }
+QUIZ_ACTIONS = {"skip_question": "skip", "stop_quiz": "stop"}  # sent as TurnRequest.action
 MEMORY_BOX = "remember_me"
 TITLE_CHARS = 40
 AVATARS = {"user": ":material/person:", "assistant": ":material/school:"}
@@ -81,6 +82,7 @@ def new_chat(code: str = "") -> dict:
         "pending": None,  # a turn waiting for permission to run the learner's code
         "remember": True,  # the "remember my choice" box under that permission prompt
         "code": code,
+        "code_stash": None,  # the learner's own code, kept while quiz snippets fill the box
         "learner": None,  # the learner token this chat's session is bound to on the server
         "transcript": None,  # what voice input heard, waiting to be edited and sent
         "voice_note": None,  # why the last recording could not be transcribed
@@ -589,15 +591,24 @@ def apply_result(chat: dict, result: dict) -> None:
     if done and done.get("stage"):
         chat["stage"] = done["stage"]
     if meta:
-        hints = (done or {}).get("hints_given", 0)
-        chat["can_show"] = bool(meta.get("can_show_answer")) or hints >= 1
+        chat["can_show"] = bool(meta.get("can_show_answer"))  # the server's policy decides
         chat["offer"] = bool(meta.get("offer_answer"))
         if meta.get("mode") == "reveal":
             chat["can_show"], chat["offer"] = False, False
+        was_quiz = chat["quiz"]
         chat["quiz_offer"], chat["quiz"] = bool(meta.get("offer_quiz")), meta.get("quiz")
         if meta.get("quiz_code"):  # a new quiz question: put its code in the box to edit
-            chat["code"] = meta["quiz_code"]
-            st.session_state.pop(f"code_{chat['session_id']}", None)  # redraw with the new text
+            if chat.get("code_stash") is None:
+                chat["code_stash"] = chat["code"]  # keep the learner's own code for later
+            set_code(chat, meta["quiz_code"])
+        elif was_quiz and not chat["quiz"] and chat.get("code_stash") is not None:
+            set_code(chat, chat["code_stash"])  # stopped or finished: give their code back
+            chat["code_stash"] = None
+
+
+def set_code(chat: dict, code: str) -> None:
+    chat["code"] = code
+    st.session_state.pop(f"code_{chat['session_id']}", None)  # redraw with the new text
 
 
 def run_turn(
@@ -692,11 +703,13 @@ def main() -> None:
             learner,
         )
     elif clicked in ("skip_question", "stop_quiz"):
-        text = QUIZ_MESSAGES[clicked]
+        text, action = QUIZ_MESSAGES[clicked], QUIZ_ACTIONS[clicked]
         run_turn(
             chat,
             text,
-            lambda: client.stream_turn(session_id, text, code or None, LANGUAGE, **who),
+            lambda: client.stream_turn(
+                session_id, text, code or None, LANGUAGE, action=action, **who
+            ),
             learner,
         )
     elif clicked == "show_answer":

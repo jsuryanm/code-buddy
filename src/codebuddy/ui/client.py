@@ -75,10 +75,14 @@ class TutorClient:
         code: str | None,
         language: str = "python",
         learner_id: str | None = None,
+        action: str | None = None,
     ) -> Iterator[tuple[str, dict]]:
+        """`action` is "skip" or "stop" from the quiz buttons, so typed text is never misread."""
         payload = {"session_id": session_id, "message": message, "code": code, "language": language}
         if learner_id:
             payload["learner_id"] = learner_id
+        if action:
+            payload["action"] = action
         return self._stream("/v1/turn", payload)
 
     def stream_show_answer(

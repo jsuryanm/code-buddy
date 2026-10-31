@@ -162,3 +162,29 @@ async def test_slow_second_retrieval_times_out_and_keeps_the_first_result(make_h
     assert [c.text for c in out["state"]["retrieval"].chunks] == ["first only"]
     assert (await h.deps.metrics.snapshot())["refine_timeouts"] == 1
     assert "my loop crashes" not in caplog.text
+
+
+async def test_a_timed_out_second_retrieval_finishes_in_the_background(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?"]))
+    h.deps.classifier = FollowUpClassifier()
+    h.deps.settings.refine_timeout_s = 0.05
+    first = RetrievedChunk("first only", 0.9, {"content_hash": "1"})
+    finished = []
+
+    async def fake(query, **kw):
+        if query.startswith("off-by-one"):
+            await asyncio.sleep(0.3)
+            finished.append(query)  # it would have filled the L3 and L4 caches by now
+        return RetrievalResult([first], grounded=True)
+
+    h.deps.retriever.retrieve = fake
+    await h.turn("my loop crashes", code=BUGGY)
+    assert finished == [] and len(h.deps.background) == 1  # tracked, so shutdown drains it
+    await asyncio.wait_for(asyncio.gather(*h.deps.background), 2)
+    assert len(finished) == 1 and not h.deps.background
+
+
+def test_refine_timeout_defaults_to_half_a_second():
+    from codebuddy.config import Settings
+
+    assert Settings(_env_file=None).refine_timeout_s == 0.5
