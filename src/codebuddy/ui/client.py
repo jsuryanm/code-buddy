@@ -27,7 +27,11 @@ def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
 
 
 class ApiError(Exception):
-    pass
+    """A failed API call. `status` is the HTTP status, or None when the API was unreachable."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 class TutorClient:
@@ -48,7 +52,9 @@ class TutorClient:
             with self._http.stream("POST", path, json=payload) as resp:
                 if resp.status_code != 200:
                     resp.read()
-                    raise ApiError(f"API returned {resp.status_code}: {resp.text[:200]}")
+                    raise ApiError(
+                        f"API returned {resp.status_code}: {resp.text[:200]}", resp.status_code
+                    )
                 yield from parse_sse(resp.iter_lines())
         except httpx.HTTPError as exc:
             raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
@@ -90,7 +96,9 @@ class TutorClient:
                 if resp.headers.get("content-type", "").startswith("application/json")
                 else resp.text[:200]
             )
-            raise ApiError(f"Memory request failed ({resp.status_code}): {detail}")
+            raise ApiError(
+                f"Memory request failed ({resp.status_code}): {detail}", resp.status_code
+            )
         return resp.json()
 
     def new_learner(self) -> str:
@@ -128,7 +136,7 @@ class TutorClient:
                 if resp.headers.get("content-type", "").startswith("application/json")
                 else resp.text[:200]
             )
-            raise ApiError(f"Voice input failed ({resp.status_code}): {detail}")
+            raise ApiError(f"Voice input failed ({resp.status_code}): {detail}", resp.status_code)
         return resp.json()["text"]
 
     def health(self) -> dict | None:

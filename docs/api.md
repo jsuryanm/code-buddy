@@ -98,6 +98,10 @@ Content type `text/event-stream`. Each event has an `event:` name and one JSON `
 | `done` | Once, last | `turn_id`, `awaiting_approval`, `citations[]`, `degraded`, `guarded`, `cache_hit`, `stage`, `hints_given`, `ttft_ms`, `total_ms` |
 | `error` | On an unexpected failure | `{"message": "..."}` |
 
+The UI labels a hint "Hint N" where N is `level + 1`, so level 0 shows as "Hint 1". After a
+declined approval the resumed `/v1/approve` stream has no `run_tools` step; it goes straight to
+`generate`.
+
 `ttft_ms` is the time from receiving the request to the first `token` event, the number the
 spec's "under one second" target applies to. It is also logged by the `codebuddy.api` logger.
 Each citation is `{"source", "section", "corpus"}`; the order matches the `[1]`, `[2]` markers the

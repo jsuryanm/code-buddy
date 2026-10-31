@@ -159,3 +159,23 @@ def test_memory_failures_have_readable_messages():
         client.forget("a" * 16)
     with pytest.raises(ApiError, match="disabled"):
         client.new_learner()
+
+
+def test_api_error_carries_the_status_and_none_when_unreachable():
+    with pytest.raises(ApiError) as err:
+        list(
+            _client(lambda r: httpx.Response(409, json={"detail": "x"})).stream_turn(
+                "s", "hi", None
+            )
+        )
+    assert err.value.status == 409
+    with pytest.raises(ApiError) as err:
+        _client(lambda r: httpx.Response(429, json={"detail": "x"})).memories("a" * 16)
+    assert err.value.status == 429
+
+    def refuse(request):
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(ApiError) as err:
+        list(_client(refuse).stream_turn("s", "hi", None))
+    assert err.value.status is None

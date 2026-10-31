@@ -31,6 +31,26 @@ AVATARS = {"user": ":material/person:", "assistant": ":material/school:"}
 SIDEBAR_CSS = """<style>
 section[data-testid="stSidebar"] .stButton button { justify-content: flex-start; }
 </style>"""
+# What the learner reads when a call fails. Never the URL or the server's JSON.
+ERRORS = {
+    None: "Can't reach the tutor. Check that it is running.",
+    401: "The tutor needs an API key. Set CODEBUDDY_API_KEY and restart the page.",
+    403: "Your saved profile is no longer valid. Turn memory off and on again.",
+    409: "This chat belongs to another memory setting, so a new chat was started. "
+    "Send your message again.",
+    429: "Too many requests. Wait a minute and try again.",
+}
+GENERIC_ERROR = "Something went wrong. Please try again."
+
+
+def error_text(exc: ApiError) -> str:
+    return ERRORS.get(exc.status, GENERIC_ERROR)
+
+
+def drop_invalid_profile() -> None:
+    """After a 403 the token is useless: forget it so turning memory on again mints a new one."""
+    st.session_state["learner_id"] = None
+    st.query_params.pop("learner", None)
 
 
 # ---------- state: one tab holds several chats, each with its own server session ----------
@@ -126,8 +146,11 @@ def forget_me(client) -> None:
     try:
         ss["memory_note"] = f"{client.forget(token)} remembered items deleted."
     except ApiError as exc:
-        ss["memory_note"] = f"error: {exc}"
+        ss["memory_note"] = f"error: {error_text(exc)}"
+        if exc.status == 403:
+            drop_invalid_profile()
         return
+    ss.pop("memory_items", None)
     ss["learner_id"] = None
     ss[MEMORY_BOX] = False
     st.query_params.pop("learner", None)
@@ -143,7 +166,7 @@ def enable_memory(client) -> None:
     try:
         ss["learner_id"] = client.new_learner()
     except ApiError as exc:
-        ss["memory_note"] = f"error: {exc}"
+        ss["memory_note"] = f"error: {error_text(exc)}"
         ss[MEMORY_BOX] = False
         return
     st.query_params["learner"] = ss["learner_id"]
@@ -155,6 +178,18 @@ def use_profile() -> None:
     ss["learner_id"] = st.query_params["learner"]
     ss[MEMORY_BOX] = True
     start_new_chat()  # a different learner: the server would refuse the old session
+
+
+def load_memories(client) -> None:
+    """Button callback: fetch what is remembered. Only on request, never on every rerun."""
+    ss = st.session_state
+    token = ss["learner_id"]
+    try:
+        ss["memory_items"] = (token, client.memories(token))
+    except ApiError as exc:
+        ss["memory_note"] = f"error: {error_text(exc)}"
+        if exc.status == 403:
+            drop_invalid_profile()
 
 
 def memory_settings(client) -> None:
@@ -171,17 +206,18 @@ def memory_settings(client) -> None:
         "you were shown. Bookmark this page to keep them. 'Forget me' deletes them."
     )
     if ss.get("memory_note"):
-        (st.error if ss["memory_note"].startswith("error") else st.markdown)(ss.pop("memory_note"))
-    if not ss.get(MEMORY_BOX):
+        note = ss.pop("memory_note")
+        if note.startswith("error: "):
+            st.error(note.removeprefix("error: "))
+        else:
+            st.markdown(note)
+    if not ss.get(MEMORY_BOX) or not ss.get("learner_id"):
         return
-    with st.expander("What I remember about you"):
-        try:
-            items = client.memories(ss["learner_id"])
-        except ApiError as exc:
-            st.warning(str(exc))
-            items = []
+    st.button("Show what I remember", key="show_memories", on_click=load_memories, args=(client,))
+    token, items = ss.get("memory_items") or (None, [])
+    if token == ss["learner_id"]:
         if not items:
-            st.caption("Nothing yet.")
+            st.caption("Nothing remembered yet.")
         for kind in sorted({i["kind"] for i in items}):
             st.markdown(f"**{kind}**")
             for item in (i for i in items if i["kind"] == kind):
@@ -377,7 +413,7 @@ def transcribe(client, text: str, audio) -> None:
     try:
         heard = client.transcribe(audio.getvalue(), audio.name or "speech.wav", audio.type)
     except ApiError as exc:
-        ss["voice_note"] = f"{exc}. You can type your question instead."
+        ss["voice_note"] = f"{error_text(exc)} You can type your question instead."
         return
     ss.transcript = " ".join(part for part in (text, heard) if part)
     ss.transcript_edit = ss.transcript
@@ -461,7 +497,7 @@ def stream_reply(events) -> dict:
             elif kind == "error":
                 if "status" in box:
                     box["status"].update(label="Something went wrong", state="error")
-                raise ApiError(data.get("message", "error"))
+                raise ApiError(data.get("message", "error"), status=500)
         close_steps()
 
     out["text"] = str(st.write_stream(tokens()) or "")
@@ -499,7 +535,8 @@ def apply_result(chat: dict, result: dict) -> None:
             chat["can_show"], chat["offer"] = False, False
 
 
-def run_turn(chat: dict, user_text: str | None, events) -> None:
+def run_turn(chat: dict, user_text: str | None, events, learner: str | None = None) -> None:
+    """Stream one turn. A turn sent with a learner token binds the chat to it once it succeeds."""
     if user_text:
         chat["messages"].append({"role": "user", "content": user_text})
         with st.chat_message("user", avatar=AVATARS["user"]):
@@ -508,12 +545,19 @@ def run_turn(chat: dict, user_text: str | None, events) -> None:
         try:
             result = stream_reply(events())
         except ApiError as exc:
-            st.error(str(exc))
-            st.caption("Check that the tutor is running, then send your message again.")
             if user_text:
                 chat["messages"].pop()
+            if exc.status == 409:  # the server holds this session for another learner
+                st.session_state["turn_note"] = error_text(exc)
+                start_new_chat(chat["code"])
+                st.rerun()
+            if exc.status == 403:
+                drop_invalid_profile()
+            st.error(error_text(exc))
             return
         render_footer(result["meta"], result["done"])
+    if learner and result["done"] is not None:
+        chat["learner"] = learner
     apply_result(chat, result)
     st.rerun()  # redraw the thread so only the latest reply carries Show answer
 
@@ -541,6 +585,8 @@ def main() -> None:
         approve, decline = permission_prompt(chat["pending"])
     if stale:
         st.caption("Your memory setting changed, so your next message starts a new chat.")
+    if st.session_state.get("turn_note"):
+        st.info(st.session_state.pop("turn_note"))
     code = code_box(chat)
     prompt = transcript_box()
     typed = read_chat_input(client, bool(health and health.get("stt_configured")))
@@ -557,17 +603,17 @@ def main() -> None:
             chat,
             "Show me the full answer.",
             lambda: client.stream_show_answer(session_id, code or None, LANGUAGE, **who),
+            learner,
         )
     elif prompt:
         if stale:
             chat = start_new_chat(code)
             session_id = chat["session_id"]
-        if learner:
-            chat["learner"] = learner
         run_turn(
             chat,
             prompt,
             lambda: client.stream_turn(session_id, prompt, code or None, LANGUAGE, **who),
+            learner,
         )
 
 
