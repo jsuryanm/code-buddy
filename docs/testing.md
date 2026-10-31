@@ -21,14 +21,14 @@ uv run python -m codebuddy.eval.run --json
 
 | Path | Covers |
 |---|---|
-| `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals, fix detection (`fixed_it`) and the `confirm` decision |
-| `tests/unit/test_quiz.py` | Quiz bank: 2/2/1 difficulty split per pattern, each snippet has exactly its bug and each solution none; grading, one hint then the solution, skip, stop, summary |
+| `tests/unit/test_policy.py` | Hint ladder, escalation, show-answer, frustration signals, fix detection (`fixed_it`, the code fingerprint, deleted or unrelated code, the moved-bug gap as an expected failure), the `confirm` decision, the persistent quiz offer and the reply after a fix |
+| `tests/unit/test_quiz.py` | Quiz bank: 2/2/1 difficulty split per pattern, each snippet has exactly its bug and each solution none, every snippet fails and every solution prints its `expect` when run in the sandbox, every solution counts as close to its question; grading, different code not graded, one hint then the solution, a question about unchanged code, skip and stop only as whole messages or an explicit action, summary |
 | `tests/unit/test_guard.py` | Leak guard: prose passes, code and fences blocked, streaming behavior |
-| `tests/unit/test_code_analysis.py` | The five bug patterns and false positives |
+| `tests/unit/test_code_analysis.py` | The five bug patterns and false positives; an `if` without a stopping `return` is no base case; statement counting |
 | `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, session bind (first learner wins), cacheability rule |
-| `tests/unit/test_query.py` | `build_query` terms per pattern and for parse errors, no code lines or learner identifiers, length cap; reciprocal rank fusion keeps and dedupes; classifier sees the last two history entries |
+| `tests/unit/test_query.py` | `build_query` terms per pattern and for parse errors, no code lines or learner identifiers, length cap; reciprocal rank fusion keeps and dedupes; classifier sees the last two history entries, with `<history>` tags stripped from them |
 | `tests/unit/test_rag.py` | Chunking, ingestion idempotence, hybrid retrieval, corpus access, filters |
-| `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request |
+| `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request, the quiz `action` field |
 | `tests/unit/test_sandbox.py` | Real subprocess runs: traces, errors with line numbers, infinite loops, recursion, output cap, thirteen refused code patterns |
 | `tests/unit/test_tools.py` | Tool functions, permission rules, and a **real MCP stdio server** called through `langchain.mcp` |
 | `tests/unit/test_sandbox_backend.py` | The `SandboxBackend` seam: default `local` backend and its result keys, unknown names, `trace_python` uses the configured backend, allowlist runs before it |
@@ -36,17 +36,17 @@ uv run python -m codebuddy.eval.run --json
 | `tests/unit/test_learner_tokens.py` | Token issue and verify: round trip, tampering, binding to the minting API key, `MEMORY_WRITE_EVERY` must be at least 1, and the secret hidden from `repr` |
 | `tests/unit/test_wiring_memory.py` | `build_memory`: builds nothing when disabled, returns a warmed mem0 store, and logs and continues without memory when warm-up fails |
 | `tests/unit/test_judge.py` | Sampled leak judge: counting, rate, never judging reveals, failures ignored |
-| `tests/integration/test_graph.py` | Full graph: ladder, guard, reveal, outage, caching, history, citations |
+| `tests/integration/test_graph.py` | Full graph: ladder (Show answer after 4 hints, the offer after 5), guard, reveal, outage and empty replies, caching, history, citations |
 | `tests/integration/test_api.py` | HTTP endpoints and SSE framing |
 | `tests/integration/test_api_hardening.py` | API keys, rate limits, the approval flow over HTTP (including another session being refused), speech upload limits and fallback, metrics, background judge |
 | `tests/integration/test_tools_hitl.py` | Pause and resume around running code: approve, decline, remember, syntax errors, reveals, refused code |
-| `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; fusion of the classifier query, no history or second query on foreign turns |
+| `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; fusion of the classifier query, no history or second query on foreign turns; a timed-out second retrieval finishes in the background |
 | `tests/integration/test_ui_smoke.py` | Streamlit page with a stub client |
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
 | `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409, concurrent first turns, and the graph backstop), the session status route on a bound session, list and forget endpoints |
 | `tests/integration/test_ui_memory.py` | Opt-in box, token minting, **Use this profile** for links, Forget me, mint failures |
-| `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; `/v1/quiz` (404 before a fix, no model call, API key), correct answers, the nudge for unchanged code, the guarded quiz hint, no classifier or retrieval on quiz answers, skip, stop, and the summary |
-| `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz |
+| `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; deleted, replaced, or revealed code is not a fix; the quiz offer persists, the reflection is acknowledged, new buggy code or a new problem withdraws it; `/v1/quiz` (404 before a fix, no model call, API key, resends the running question), correct answers, the nudge for unchanged code, different code, the guarded quiz hint, a degraded hint keeps the try, no classifier or retrieval on quiz answers, skip, stop, the `action` field, and the summary |
+| `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz with their actions, the learner's code restored after Stop and after the summary, Show answer from the server's flag only |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 
 ## Fakes (no real models)
@@ -100,7 +100,7 @@ and `retrieval.jsonl` (queries with expected text).
 | `leak_rate` | Hint replies still containing code after the guard | at most 0.02 |
 | `guard_trigger_rate` | Scripted leaky replies the guard stopped | 1.0 |
 | `pattern_recall` | Labeled bugs found by static analysis | 1.0 |
-| `escalation_ok` | Offer after two hints, never a reveal unasked | 1.0 |
+| `escalation_ok` | Show answer after four hints, the offer after five, never a reveal unasked | 1.0 |
 | `fix_detection` | Per pattern: "I fixed it" with unchanged code is a hint, the bank solution is a `confirm` | 1.0 |
 | `retrieval_recall` | Queries whose expected text is in the top results (sample corpus) | at least 0.75 |
 

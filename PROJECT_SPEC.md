@@ -147,7 +147,7 @@ Each requirement has an ID used in [Section 22](#22-requirements-traceability).
 | **FR12** | **Agentic best practices.** | Bounded loops, typed tools, guardrails, tracing, evals (Section 12). |
 | **FR13** | **Mermaid diagrams for architectures and workflows.** | Section 14. |
 | **FR14** | **Framework recommendation.** | Section 15. |
-| **FR15** | **Anti-frustration escape hatch.** Learner always reaches the answer. | Explicit "Show answer" button always visible after first hint; auto-offer on frustration signals (Section 8.4). |
+| **FR15** | **Anti-frustration escape hatch.** Learner always reaches the answer. | Explicit "Show answer" button enabled after the 4th hint (sooner on frustration signals); an explicit request always reveals; auto-offer after 5 hints or on frustration signals (Section 8.4). |
 | **FR16** | **Source documents list.** | Section 19. |
 
 ---
@@ -317,14 +317,16 @@ Constraints: ≤ 90 words at hint level 2 and ≤ 120 words in explanations and 
 
 The learner should never feel trapped. Mechanisms:
 
-- **Always-visible "Show answer"** after the first hint. No justification required. Optional soft
-  confirm: "Want one more hint first, or see the full answer?"
-- **Frustration signals** trigger an offer to reveal: repeated identical submissions, ≥ 2 hints
-  without progress (the answer is offered after 2 hints), time-on-problem threshold, explicit phrases ("I give up", "just tell me", "this
-  is stupid"), rapid-fire short messages.
-- **Escalation guarantee.** Hard cap: the hint ladder reaches Level 4 within a configurable
-  budget (default: 3 tutor turns or 10 minutes on the same problem), at which point the tutor
-  proactively offers the answer.
+- **"Show answer" button** enabled after the 4th hint, and sooner when a frustration signal or
+  the time cap fires. No justification required. An explicit typed request ("show me the answer")
+  always reveals, even on the first turn. Optional soft confirm: "Want one more hint first, or see
+  the full answer?"
+- **Frustration signals** trigger an offer to reveal: repeated identical submissions, ≥ 5 hints
+  without progress (the answer is offered after 5 hints), time-on-problem threshold, explicit
+  phrases ("I give up", "just tell me", "this is stupid"), rapid-fire short messages.
+- **Escalation guarantee.** Hard cap: the tutor proactively offers the answer within a
+  configurable budget (default: 6 tutor turns or 10 minutes on the same problem). Hint levels stop
+  at 3, so hints 4 to 6 stay at the scaffold level until the learner asks for the answer.
 - **Tone.** Warm, encouraging, never condescending. Normalizes struggle ("This bug
   trips up most people").
 - **Reveal is a teaching moment.** Answer comes with explanation, then a **transfer question** on a
@@ -377,21 +379,28 @@ Used to pick question difficulty and to avoid re-explaining mastered concepts.
 
 **Fix detection.** The tutor decides from the code alone that the learner fixed their bug: the last
 code they sent had bug patterns from the static analysis, this code is different, it parses, none
-of those patterns remain, and a trace that ran this turn (if any) did not fail. Saying "I fixed it"
-is not enough. A fix gets a **confirm** turn (after the explicit-reveal check; a new problem is not
+of those patterns remain, and it is still the same program (it keeps the buggy code's function
+names and at least 60% of its statements, from a fingerprint that never stores the code text).
+Deleting the code or sending something unrelated is not a fix, and neither is pasting a revealed
+solution. Saying "I fixed it" is not enough. A fix gets a **confirm** turn (after the explicit-reveal check; a new problem is not
 a fix): at most 60 plain words that say what the change fixed using the learner's own code, ask
 them to explain in one sentence why it works (self-explanation, 8.1), and offer a quiz. No new code
 is written. The hint ladder resets, so a solved problem no longer leaves the next question at a
-high level.
+high level. The quiz stays on offer on later replies until it starts, a new problem begins, or new
+buggy code arrives. The learner's reply to "why does it work?" with the same code gets a short
+acknowledgement (at most 40 words, the quiz still on offer), not a hint.
 
 **Practice quiz.** On request, five questions on the same bug pattern in rising difficulty: two
 easy (short, obvious), two medium (the bug inside a slightly longer function), one hard (the bug in
 a nested loop or a helper). Snippets and their solutions are hand-written and verified by the
 static analysis in tests; no model generates quiz code, so there is no leak risk and no added
-latency. Each answer is graded from the code (parses, pattern gone). Correct: "Correct" and the
-next question in the same reply. Wrong: one guarded level-0 hint, then on a second wrong try, or on
-"skip" or a request for the answer, the stored solution is shown (a reveal from code, not from the
-model) and the quiz moves on. No hint ladder inside the quiz. After question 5 the learner sees the
+latency. Each snippet has a driver line and a stored expected output; tests run every snippet and
+solution in the sandbox. Each answer is graded from the code (parses, pattern gone) once it is
+still the question's code (similar text, same function names, comparable statement count);
+otherwise the learner is asked to fix the question's code, with no try counted. Correct: "Correct"
+and the next question in the same reply. Wrong: one guarded level-0 hint, then on a second wrong
+try, on Skip question, or on a request for the answer, the stored solution is shown (a reveal from
+code, not from the model) and the quiz moves on. No hint ladder inside the quiz. After question 5 the learner sees the
 score ("4 of 5") and, if any were missed, which difficulty to review. Quiz turns do not change the
 ladder, run no tools, skip the answer cache, and write nothing to learner memory. See
 `docs/pedagogy-policy.md`.

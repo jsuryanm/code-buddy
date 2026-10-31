@@ -31,11 +31,14 @@ HTTP 429 with a `Retry-After` header. See [security.md](security.md).
   "message": "my sum crashes with an IndexError",
   "code": "nums = [1, 2, 3]\n...",
   "language": "python",
-  "learner_id": "optional learner token from POST /v1/memory/learners"
+  "learner_id": "optional learner token from POST /v1/memory/learners",
+  "action": null
 }
 ```
 
-`code` is optional. An empty or blank `message` returns HTTP 422. The session ID is a client
+`code` is optional. `action` is optional: `"skip"` or `"stop"` while a quiz runs (the UI's Skip
+question and Stop quiz buttons send it), so the button's text is never read as an answer. Any other
+value returns 422. An empty or blank `message` returns HTTP 422. The session ID is a client
 choice; sessions expire after 2 hours without activity (`TTL_SESSION`).
 
 `learner_id` is the signed token, not a raw ID. Send it only for a learner who opted in to memory.
@@ -94,6 +97,8 @@ on the first turn, and resets the hint ladder afterwards.
 ```
 
 Available after a turn whose `meta` had `offer_quiz: true` (the tutor saw the learner fix a bug).
+The offer stays on later replies until the quiz starts, a new problem begins, or new buggy code
+arrives. While a quiz runs, this sends the current question again instead of starting over.
 Starts five questions on that bug, two easy, two medium, one hard, from a hand-checked bank, and
 streams question 1: a `meta` with `mode: "quiz"`, `quiz` and `quiz_code`, the question text as
 `token` events (the buggy snippet in a python fence, then "Find the bug, fix it in the code box,
@@ -101,12 +106,19 @@ and send it."), and `done`. No model is called. HTTP 404 (`Nothing to quiz on ye
 first`) before any fix (not 409, which means the session belongs to another learner); the API key, rate limit, and learner binding apply as for a turn.
 
 Answers are ordinary `POST /v1/turn` calls with the fixed code in `code`. A correct answer streams
-"Correct." and the next question in the same reply; code sent back unchanged gets a short nudge
-("Edit the code in the box to fix the bug, then send it.") and costs no try; a first wrong try
-gets one level-0 hint; a
-second wrong try, or a message with "skip", shows the stored solution and moves on; "stop quiz"
-ends it. After question 5 the reply is a summary such as "you got 4 of 5". See
+"Correct." and the next question in the same reply. Code sent back unchanged gets a short nudge
+("Edit the code in the box to fix the bug, then send it."), or one level-0 hint when the message is
+a question, and costs no try. Code that is no longer the question's code (deleted, replaced, its
+functions dropped) gets "That looks like different code. Fix the bug in the question's code and
+send it." and costs no try. A first wrong try gets one level-0 hint (a degraded hint does not use
+up the try); a second wrong try, `action: "skip"`, or a message that is only "skip" shows the stored
+solution and moves on; `action: "stop"` or a message that is only "stop quiz" ends it. After
+question 5 the reply is a summary such as "you got 4 of 5". See
 [pedagogy-policy.md](pedagogy-policy.md#quiz-after-a-fix).
+
+Known limits, unchanged for now: two requests on one session at the same time are not serialized
+(no session lock), so the last save wins; and a turn resumed through `/v1/approve` continues from
+the session snapshot taken when it paused, so a quiz started in between can be overwritten.
 
 ## Streaming response
 
@@ -123,7 +135,8 @@ Content type `text/event-stream`. Each event has an `event:` name and one JSON `
 
 The UI labels a hint "Hint N" where N is `level + 1`, so level 0 shows as "Hint 1".
 
-`confirm` means the tutor saw the learner fix their bug; it comes with `offer_quiz: true` and
+`confirm` means the tutor saw the learner fix their bug, or acknowledges the learner's explanation
+of that fix on a later turn; it comes with `offer_quiz: true` and
 `quiz_concept`, the concept name of the fixed bug (for example "loop bounds", never an internal
 pattern id). `quiz` mode is a reply written by code: a quiz question, a grade with the next
 question, a shown solution, a summary, or "Quiz stopped". While a quiz runs, `quiz` is

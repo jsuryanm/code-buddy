@@ -53,7 +53,8 @@ settings `MAX_TOKENS_*`). The cap is passed per call, by mode and not by tier, a
 `RunnableWithFallbacks` hands the same kwargs to every fallback tier, so a fallback keeps it. A
 reply that hits the cap is cut off mid-sentence; the caps are set well above the word limits so
 this only happens when the model ignores them. `PROMPT_VERSION` became `p3` with this change (plus
-the classifier prompt that now sees recent history) and is now `p4` (the early-hint rule above).
+the classifier prompt that now sees recent history), then `p4` (the early-hint rule above), and is
+now `p5` (the reply after a fix, `AFTER_FIX_RULE`, below).
 
 ## When the answer is offered
 
@@ -61,20 +62,22 @@ the classifier prompt that now sees recent history) and is now `p4` (the early-h
 
 | Trigger | Condition |
 |---|---|
-| Hints without progress | `hints_given >= 2` (after 2 hints, so from the 3rd hint on) |
-| Turn cap | `hints_given >= LADDER_MAX_TURNS` (default 3) |
+| Hints without progress | `hints_given >= 5` (after 5 hints, so from the 6th tutor turn on) |
+| Turn cap | `hints_given >= LADDER_MAX_TURNS` (default 6) |
 | Time cap | seconds since the first hint on this problem `>= LADDER_MAX_SECONDS` (default 600) |
 | Give-up phrase | "I give up", "this is stupid", "I'm stuck/frustrated/lost", "I don't get it/this", "this makes no sense" |
 | Repeated submission | the same code (normalized) sent a third time in a row |
 
-With the default settings the 2-hint trigger fires before the 3-turn cap, so the offer appears with
-the third hint (level 2). Lower `LADDER_MAX_TURNS` below 2 to offer earlier. This keeps the learner
-out of a long hint loop.
+With the default settings the 5-hint trigger fires before the 6-turn cap, so the offer appears with
+the sixth hint. The level stays capped at 3 (scaffold), so hints 4, 5, and 6 are all level 3. Lower
+`LADDER_MAX_TURNS` below 5 to offer earlier.
 
 An offer does not reveal anything. The hint at its level is still given, the prompt asks the model to
 end by saying that "Show answer" is available, and the UI highlights the button. The learner
-decides. Independently of any trigger, `can_show_answer` is true after the first hint, so the
-button is enabled from then on.
+decides. Independently of any trigger, `can_show_answer` is true after the 4th hint
+(`SHOW_AFTER_HINTS` in `pedagogy/policy.py`), so the button is enabled from the 5th tutor turn on.
+A give-up phrase, repeated submissions, or the time cap enable it sooner, because they also make the
+offer. An explicit typed request, or `/v1/show-answer`, always reveals, even on the first turn.
 
 Explicit requests are matched by `asks_for_answer()`, for example "show me the answer",
 "give me the solution", "just tell me", "reveal the solution".
@@ -87,23 +90,35 @@ Explicit requests are matched by `asks_for_answer()`, for example "show me the a
 |---|---|
 | Hint turn | `hints_given += 1`; `started_at` set on the first hint |
 | Reveal | `reveals += 1`; `hints_given = 0`; `started_at = 0`; repeated submissions reset |
+| Reveal (also) | `last_patterns` and `last_shape` cleared, so pasting the revealed solution is not praised as a fix |
 | Fix confirmed | `hints_given = 0`; `started_at = 0`; repeated submissions reset; `quiz_offer` set to the fixed pattern |
-| Code sent that parses (not a quiz answer) | `last_patterns` becomes its bug patterns, the yardstick for the next fix |
-| Classifier says `problem_start` | Ladder restarts (`hints_given = 0`, `started_at = 0`) |
+| Code sent that parses (not a quiz answer) | `last_patterns` becomes its bug patterns, the yardstick for the next fix; `last_shape` becomes its fingerprint when it has patterns |
+| Changed code with bug patterns (not a quiz answer) | `quiz_offer` cleared before the policy runs |
+| Classifier says `problem_start` | Ladder restarts (`hints_given = 0`, `started_at = 0`); `quiz_offer` cleared |
+| Quiz started | `quiz_offer`, `last_patterns`, `last_shape` cleared; ladder reset |
 | Learner answers the run-my-code prompt | `run_permission` becomes `allow` or `deny` (if "remember" was chosen) |
 | Every turn | Stage updated from the classifier; last 6 messages kept (500 chars each) |
 
 ## Fix detection
 
-`fixed_it(progress, features, code_changed, runtime)` in `pedagogy/policy.py` decides from the
-code alone whether the learner fixed their bug. It is true when the last code they sent had bug
-patterns (`progress.last_patterns`), this code is different (its normalized hash changed), it
-parses, none of those patterns remain, and a trace that ran this turn did not fail. A message
-such as "I fixed it" or "it works now" with the same code is not enough. A syntax error in between
-does not lose the yardstick: code that fails to parse leaves `last_patterns` as it was.
+`fixed_it(progress, features, code_changed)` in `pedagogy/policy.py` decides from the code alone
+whether the learner fixed their bug. It is true when the last code they sent had bug patterns
+(`progress.last_patterns`), this code is different (its normalized hash changed), it parses, none
+of those patterns remain, and it is still the same program. For that last check `last_shape` keeps
+a fingerprint of the buggy code, `shape()`: its function names and its count of statements other
+than `pass` and bare constants (never the code text). The new code must keep every one of those
+function names and at least 60% of the statements, so deleting the code (`# nothing`, `pass`) or
+sending something unrelated (`print(1)`) is not a fix. A message such as "I fixed it" or "it works
+now" with the same code is not enough. A syntax error in between does not lose the yardstick: code
+that fails to parse leaves `last_patterns` as it was. The trace tool runs after the policy, so
+`fixed_it` does not look at runtime results.
 
-Tools run after the policy, so in the current graph no trace has run yet when `fixed_it` is
-called; the runtime check covers a runtime result when one is present and is tested on its own.
+Known gap: a fix that only moves the bug where `analyze()` cannot see it, for example
+`range(len(nums))` with `nums[i + 1]`, is still confirmed. The test for it is marked as an expected
+failure.
+
+The `missing_base_case` detector counts an `if` as a base case only when one of its branches has a
+`return` that does not call the function again, so `if False: pass` does not hide the bug.
 
 A fix sets `Signals.fixed` (not a frustration signal), and `decide_mode` returns `confirm` after
 the explicit-reveal check. A turn classified as `problem_start` is a new problem, not a fix. The
@@ -115,6 +130,18 @@ learner's own fixed code is not a leak. The ladder resets, which closes the old 
 problem left the next question at a high hint level. `meta` carries `offer_quiz: true` and
 `quiz_concept`, the concept name (for example "loop bounds"), never the pattern id.
 
+The offer persists. Whenever `progress.quiz_offer` is set and no quiz runs, `decide_mode` sets
+`offer_quiz` and `quiz_concept` on its decision, whatever the mode, so Try a quiz stays under the
+latest reply. The offer goes away when a quiz starts, on `problem_start`, and when changed code
+with new bug patterns arrives.
+
+The learner's answer to "why does your fix work?" usually comes with the same fixed code. When a
+quiz is on offer, no quiz runs, the code did not change, and the intent is `debug_help`, the policy
+sets `Signals.after_fix` and returns `confirm` with `after_fix: true` instead of a hint. Its prompt
+(`AFTER_FIX_RULE`) asks for at most 40 plain words: acknowledge what they said, correct it gently in
+one sentence if it is off (no code), and say the quiz is still available. It does not change
+`hints_given`. A concept question or an off-topic message still gets its usual mode.
+
 ## Quiz after a fix
 
 `POST /v1/quiz` starts a set of five questions on the bug pattern just fixed
@@ -122,9 +149,13 @@ problem left the next question at a high hint level. `meta` carries `offer_quiz:
 hand-written bank in `pedagogy/quiz.py`, not from the model: five snippets per pattern, in rising
 difficulty (two easy, two medium, one hard). Easy is a short, obvious version; medium hides the
 bug in a slightly longer function; hard puts it in a nested loop or a helper. Each entry stores its
-`solution`. A test asserts every snippet parses and `analyze()` finds exactly its pattern, and
-every solution parses with no pattern. Starting a quiz makes no model call, resets the ladder, and
-clears `last_patterns` so quiz code never counts as a fix of the learner's own bug.
+`solution` and `expect`, what the solution prints. Every snippet has a call or driver line. Tests
+assert that every snippet parses and `analyze()` finds exactly its pattern, that every solution
+parses with no pattern, and, running each in the sandbox, that every snippet fails (an error, a
+timeout, or output other than `expect`) and every solution prints `expect`. Starting a quiz makes no
+model call, resets the ladder, withdraws the quiz offer, and clears `last_patterns` so quiz code
+never counts as a fix of the learner's own bug. Calling `/v1/quiz` while a quiz runs sends the
+current question again instead of restarting.
 
 `progress.quiz` holds `{"pattern", "index" (0 to 4), "score", "results", "tries"}`. While it is
 set, each turn is graded by `advance()` before the normal policy:
@@ -132,10 +163,12 @@ set, each turn is graded by `advance()` before the normal policy:
 | Turn | Result |
 |---|---|
 | Code unchanged from the question (ignoring blank lines and trailing spaces) | Not graded: a short nudge from code, "Edit the code in the box to fix the bug, then send it."; no try counted |
+| Code unchanged, and the message is a question (ends with "?") | One level-0 hint from the model on the question, leak guard on; no try counted |
+| Code that is no longer the question's code | Not graded: "That looks like different code. Fix the bug in the question's code and send it."; no try counted. The answer must stay close to the snippet (difflib ratio at least 0.6 on the code without blank lines and trailing spaces), keep the snippet's function names, and keep at least 60% of its statements |
 | Code that parses with the pattern gone | "Correct.", score + 1, and the next question in the same reply (no extra button) |
-| First wrong try (pattern still there, or a syntax error) | One hint from the model: the normal level-0 hint prompt, leak guard on |
-| Second wrong try, "skip", or an explicit request for the answer | The stored solution, written by code; the question is marked wrong and the next one follows |
-| "stop quiz" (also "skip/end/quit the quiz") | The quiz ends with the score so far |
+| First wrong try (pattern still there, or a syntax error) | One hint from the model: the normal level-0 hint prompt, leak guard on. If the model is unavailable (a degraded reply), the try is not used up |
+| Second wrong try, Skip question, a message that is only "skip" (or "skip this question"), or an explicit request for the answer | The stored solution, written by code; the question is marked wrong and the next one follows |
+| Stop quiz, or a message that is only "stop quiz" (also "end/quit/exit/leave/skip the quiz") | The quiz ends with the score so far |
 | A message without code | Not a quiz answer: the tutor replies as usual and the quiz waits |
 | Answer to question 5 | A summary, "4 of 5"; if any were wrong, one sentence naming the difficulties to review. The quiz is cleared |
 
@@ -143,7 +176,9 @@ Showing a quiz solution is a reveal from code, from the bank's stored `solution`
 not involved. A quiz answer skips the classifier and retrieval (it goes from `check_cache` straight
 to `policy`). There is no ladder inside a quiz: quiz turns never change `hints_given`, run no tools,
 skip the answer cache, and write nothing to learner memory. Show answer is hidden while a quiz
-runs. `meta` carries `quiz: {"index", "total", "difficulty", "score"}` while one is active, and
+runs. Skip and stop phrases count only when they are the whole message, so "should I skip the
++ 1?" is an answer; the UI's buttons send `action: "skip"` or `"stop"` on the turn, so their text is
+never misread. `meta` carries `quiz: {"index", "total", "difficulty", "score"}` while one is active, and
 `quiz_code`, the snippet of a new question, so the UI can put it into the code box.
 
 ## Leak guard rules (`pedagogy/guard.py`)

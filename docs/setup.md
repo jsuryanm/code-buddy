@@ -113,7 +113,7 @@ model IDs are set. If `CODEBUDDY_API_URL` points elsewhere, set it before starti
 ## Verify the install
 
 ```bash
-uv run pytest -q                      # 374 tests, no network or keys needed
+uv run pytest -q                      # 482 tests, no network or keys needed
 uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 ```

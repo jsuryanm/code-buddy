@@ -118,9 +118,11 @@ retrieval fails or finds nothing, the first result stands.
 
 Latency: the second retrieval runs after `classify`, which is already on the critical path before
 `policy`, so it adds one search (and one query embedding unless L3 has it) to most live turns. L3
-and L4 caches apply to it as to the first. It has a budget of `REFINE_TIMEOUT_S` (default 0.3 s,
-`asyncio.wait_for`): on a timeout the first result is used unchanged, a debug line is logged (no
-learner text), and the `refine_timeouts` counter in `/v1/metrics` rises. Nothing has been measured
+and L4 caches apply to it as to the first. The turn waits for it up to `REFINE_TIMEOUT_S` (default 0.5 s,
+`asyncio.wait_for` over `asyncio.shield`): on a timeout the first result is used unchanged, a debug
+line is logged (no learner text), and the `refine_timeouts` counter in `/v1/metrics` rises. The
+search itself is not cancelled. It runs as a background task tracked by `Deps.spawn`, so it still
+fills the L3 and L4 caches for the next turn, and shutdown waits for it like a memory write. Nothing has been measured
 live. Offline, with the heuristic classifier, the second query equals the first and is skipped.
 
 The offline eval's `retrieval_recall` uses the same path: `build_query` with the case's `code`,

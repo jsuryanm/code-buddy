@@ -20,9 +20,9 @@ question and gives up.
   time, escalating through a hint ladder (levels 0 to 3) before it explains or reveals.
 - **Grounded in course material.** Replies retrieve from an ingested textbook and cite their
   sources.
-- **The answer is always reachable.** Show answer is available after the first hint. The tutor
-  offers the answer after 2 hints, a time cap, or frustration signals, and an explicit request
-  always reveals.
+- **The answer is always reachable.** Show answer is enabled after the 4th hint, or sooner on
+  frustration signals or a time cap. The tutor offers the answer after 5 hints, the time cap, or
+  frustration signals, and an explicit request always reveals.
 - **Policy in code, not prompt.** `pedagogy/policy.py` picks the mode; the model only puts it
   into words. A streaming guard blocks corrected code at hint levels 0 to 3, so a prompt slip
   cannot leak the answer.
@@ -64,6 +64,7 @@ question and gives up.
 flowchart LR
     A[Load session and analyze code] --> B{Answer cache hit?}
     B -- yes --> U[Update session state]
+    B -- quiz answer --> P
     B -- no --> C[Classify intent]
     B -- no --> D[Retrieve passages]
     B -- no --> M[Recall memory]
@@ -79,8 +80,10 @@ flowchart LR
 
 The API loads the session, runs static analysis on any code, and checks the answer cache. On a
 miss it classifies the message, retrieves course passages, and recalls the learner's memory (when
-opted in) in parallel, then refines the retrieval for short follow-ups. The pedagogy policy
-chooses a mode (hint at a level, explain, or reveal) from session state, with no model call. Tools
+opted in) in parallel, then refines the retrieval with the classifier's query. An answer to a
+running quiz skips those steps and goes straight to the policy, which grades it from the code. The
+pedagogy policy chooses a mode (hint at a level, explain, reveal, confirm a fix, or a quiz reply)
+from session state, with no model call. Tools
 such as code tracing pause the turn until the learner approves. The model then phrases a reply for
 that mode, every token passes through the leak guard, and the session state is updated.
 
@@ -111,7 +114,8 @@ uv run streamlit run src/codebuddy/ui/app.py             # terminal 2
 
 Open http://localhost:8501, paste buggy Python into **Your code**, and ask a question. The tutor
 shows its steps while it works, then streams the reply; references sit collapsed under each
-reply. Click **Show answer** after the first hint, and approve the run when the tutor asks to
+reply. **Show answer** is enabled after the 4th hint (asking for the answer in the chat always
+works). Approve the run when the tutor asks to
 execute your code. **New chat** in the sidebar starts a fresh problem; earlier chats stay listed
 there for this tab. The demo replays
 scripted replies over a small sample corpus in `data/sample/`; the policy, leak guard,
