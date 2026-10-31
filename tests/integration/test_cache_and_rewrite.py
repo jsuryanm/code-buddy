@@ -3,6 +3,8 @@ import numpy as np
 from codebuddy.agent.state import Classification
 from codebuddy.cache.memory import InMemoryCache
 from codebuddy.cache.semantic import SemanticIndex
+from codebuddy.rag.rerank import RetrievedChunk
+from codebuddy.rag.retrieve import RetrievalResult
 from codebuddy.schemas import Intent, PcditStage
 from tests.helpers import ScriptedChat
 
@@ -54,10 +56,15 @@ async def test_rephrased_concept_question_hits_the_semantic_cache(make_harness):
 
 
 class FollowUpClassifier:
+    def __init__(self):
+        self.progress = []
+
     async def classify(self, message, code, progress):
+        self.progress.append(progress)
         return Classification(
             intent=Intent.DEBUG_HELP,
             stage=PcditStage.T,
+            concepts=["loop bounds"],
             search_query="off-by-one error in a loop",
         )
 
@@ -66,20 +73,8 @@ def context_of(model: ScriptedChat) -> str:
     return model.calls[-1][1][1]
 
 
-async def test_short_follow_up_is_rewritten_before_retrieval(make_harness):
-    model = ScriptedChat(["Q one?", "Q two?"])
-    h = make_harness(standard=model)
-    h.deps.classifier = FollowUpClassifier()
-    await h.turn("my loop crashes", code=BUGGY)
-    await h.turn("and why?", code=BUGGY + "# retry\n")
-    assert "off-by-one" in context_of(model)
-
-
-async def test_long_messages_are_not_rewritten(make_harness):
+def spy_queries(h) -> list[str]:
     calls = []
-    model = ScriptedChat(["Q one?", "Q two?"])
-    h = make_harness(standard=model)
-    h.deps.classifier = FollowUpClassifier()
     original = h.deps.retriever.retrieve
 
     async def spy(query, **kw):
@@ -87,9 +82,61 @@ async def test_long_messages_are_not_rewritten(make_harness):
         return await original(query, **kw)
 
     h.deps.retriever.retrieve = spy
+    return calls
+
+
+async def test_follow_up_retrieval_fuses_the_classifier_query(make_harness):
+    model = ScriptedChat(["Q one?", "Q two?"])
+    h = make_harness(standard=model)
+    h.deps.classifier = FollowUpClassifier()
+    calls = spy_queries(h)
     await h.turn("my loop crashes", code=BUGGY)
-    before = len(calls)
-    await h.turn(
-        "this is a much longer message about my loop crashing again today", code=BUGGY + "# x\n"
-    )
-    assert len(calls) - before == 1  # one retrieval, no second pass
+    await h.turn("and why?", code=BUGGY + "# retry\n")
+    assert "off-by-one" in context_of(model)
+    assert calls[-2].startswith("and why?") and calls[-1].startswith("off-by-one error")
+    assert "nums" not in calls[-1]  # code identifiers never reach the search
+
+
+async def test_long_messages_also_get_the_second_query(make_harness):
+    model = ScriptedChat(["Q one?"])
+    h = make_harness(standard=model)
+    h.deps.classifier = FollowUpClassifier()
+    calls = spy_queries(h)
+    await h.turn("this is a much longer message about my loop crashing again today", code=BUGGY)
+    assert len(calls) == 2  # first turn, no history, long message: still fused
+
+
+async def test_refine_merges_instead_of_replacing(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?"]))
+    h.deps.classifier = FollowUpClassifier()
+    first = RetrievedChunk("first only", 0.9, {"content_hash": "1"})
+    second = RetrievedChunk("second only", 0.4, {"content_hash": "2"})
+
+    async def fake(query, **kw):
+        hit = second if query.startswith("off-by-one") else first
+        return RetrievalResult([hit], grounded=True)
+
+    h.deps.retriever.retrieve = fake
+    out = await h.turn("my loop crashes", code=BUGGY)
+    texts = [c.text for c in out["state"]["retrieval"].chunks]
+    assert texts == ["first only", "second only"]
+    assert out["state"]["retrieval"].grounded
+
+
+async def test_same_query_skips_the_second_retrieval(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?"]))  # heuristic classifier echoes the message
+    calls = spy_queries(h)
+    await h.turn("my loop crashes", code=BUGGY)
+    assert len(calls) == 1
+
+
+async def test_foreign_turn_gets_no_history_and_no_second_query(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?", "Q?"]))
+    classifier = FollowUpClassifier()
+    h.deps.classifier = classifier
+    await h.turn("why is my loop wrong", code=BUGGY, learner_id="learner-0123456789ab")
+    calls = spy_queries(h)
+    await h.turn("and why?", code=BUGGY)  # bound to another learner: a foreign turn
+    assert classifier.progress[-1].history == []
+    assert len(calls) == 1
+    assert (await h.deps.sessions.load("s1")).history  # the owner's history is untouched

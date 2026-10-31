@@ -26,6 +26,7 @@ from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.pedagogy.policy import decide_mode
 from codebuddy.pedagogy.templates import fallback_text, system_prompt, user_prompt
+from codebuddy.rag.query import build_query, rrf_merge
 from codebuddy.rag.retrieve import RetrievalResult
 from codebuddy.schemas import Citation, Decision, HintLevel, Intent, Mode
 from codebuddy.tools.policy import decide_permission
@@ -37,7 +38,6 @@ MAX_CODE = 8000
 HISTORY_TURNS = 6
 HISTORY_CHARS = 500
 LOCK_WAIT_SECONDS = 1.5
-SHORT_FOLLOWUP_WORDS = 8  # short messages with history are rewritten before retrieval
 
 
 def _text(chunk) -> str:
@@ -184,7 +184,8 @@ class TutorNodes:
         progress = state["progress"]
         writer = get_stream_writer()
         emit_step(writer, "classify", "running")
-        cls = await self.d.classifier.classify(state["message"], state.get("code"), progress)
+        seen = progress.model_copy(update={"history": []}) if state.get("foreign") else progress
+        cls = await self.d.classifier.classify(state["message"], state.get("code"), seen)
         emit_step(writer, "classify", "done")
         if cls.intent is Intent.PROBLEM_START:  # new problem: restart the ladder
             progress.hints_given = 0
@@ -192,10 +193,8 @@ class TutorNodes:
             progress.repeated_submissions = 0
         return {"classification": cls, "progress": progress}
 
-    def _query(self, text: str, state: TutorState) -> str:
-        features = state.get("features")
-        concepts = [PATTERNS[p].concept for p in (features.patterns if features else [])]
-        return " ".join([text, *concepts])
+    def _query(self, text: str, state: TutorState, concepts: list[str] | None = None) -> str:
+        return build_query(text, state.get("features"), concepts or [])
 
     async def retrieve(self, state: TutorState) -> dict:
         writer = get_stream_writer()
@@ -238,22 +237,29 @@ class TutorNodes:
         return {"memories": items}
 
     async def refine_retrieval(self, state: TutorState) -> dict:
-        """Short follow-ups ("and what about that?") retrieve badly. Re-run retrieval with the
-        classifier's standalone query, only in that case, so most turns pay nothing."""
+        """Follow-ups ("and why is that?") and vague messages retrieve badly on their own. Search
+        again with the classifier's standalone query and concepts, then fuse both result lists
+        (reciprocal rank fusion) so neither query's best passages are lost. Skipped when the
+        second query would be the same as the first, and for foreign turns."""
         cls = state["classification"]
-        message = state["message"]
-        query = cls.search_query.strip()
-        short = len(message.split()) <= SHORT_FOLLOWUP_WORDS
-        if not (short and state["progress"].history and query) or state.get("foreign"):
+        if state.get("foreign") or not cls.search_query.strip():
             return {}
-        if keys.normalize(query) == keys.normalize(message):
+        query = self._query(cls.search_query.strip(), state, cls.concepts)
+        if keys.normalize(query) == keys.normalize(self._query(state["message"], state)):
             return {}
         try:
-            result = await self.d.retriever.retrieve(self._query(query, state))
+            second = await self.d.retriever.retrieve(query)  # L3 and L4 caches apply
         except Exception:
             log.warning("refined retrieval failed", exc_info=True)
             return {}
-        return {"retrieval": result} if result.chunks else {}
+        if not second.chunks:
+            return {}
+        first = state["retrieval"]
+        chunks = rrf_merge([first.chunks, second.chunks], self.d.settings.rerank_top)
+        best = max(c.score for c in chunks)
+        grounded = best >= self.d.settings.relevance_threshold
+        cache_hit = first.cache_hit and second.cache_hit
+        return {"retrieval": RetrievalResult(chunks, grounded, cache_hit=cache_hit)}
 
     async def policy(self, state: TutorState) -> dict:
         s = self.d.settings

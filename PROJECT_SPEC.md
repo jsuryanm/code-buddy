@@ -446,12 +446,14 @@ query → rewrite/expand → hybrid search (dense + sparse, filtered) → fuse (
 
 ### 9.5 Code-aware retrieval
 
-Learners' code is part of the query. The system:
+Learners' code informs the query, but its text never enters it. The system:
 
 - Extracts structural features with an AST parser (loops, conditionals, function
   signatures) and error traces.
 - Maps them to concept tags and retrieves "common-bug" chunks matching the pattern (e.g.,
   `range(len(x)+1)` → off-by-one).
+- Adds only plain terms to the query: pattern concepts and search terms, "syntax error" on a
+  parse failure, and names of built-ins the code calls. Learner identifiers and code lines stay out.
 - Keeps a **bug-pattern knowledge base**: pattern, symptom, explanation, Socratic questions that
   lead to it. This directly powers FR3.
 

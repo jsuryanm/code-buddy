@@ -95,7 +95,35 @@ Search filters use these fields, for example
 3. Rerank to `RERANK_TOP` with the configured reranker.
 4. Report `grounded` when the best score reaches `RELEVANCE_THRESHOLD`.
 
-The agent builds the query from the learner message plus the concept of each detected bug pattern.
+### Query building and fusion
+
+`build_query(message, features, concepts)` in `rag/query.py` makes the search text: the learner
+message, then for each detected bug pattern its concept and plain search terms (`search_terms` on
+`BugPattern`, for example "range len index off-by-one"), "syntax error" when the code does not
+parse, the names of up to 6 built-ins and container methods the code calls (`range`, `len`,
+`remove`, from the AST), and any classifier concepts. Repeated terms are dropped and the result is
+capped at 300 characters, with at most half for the extra terms. The learner's code itself never
+goes into the query: only names on a fixed list of built-ins and `list`, `dict`, `str`, `set`
+methods, so the learner's own identifiers stay out.
+
+`retrieve` searches with `build_query(message, features)` while the classifier runs. Then
+`refine_retrieval` builds a second query from the classifier's standalone `search_query` (which
+resolves "it" and "that" from the last two history entries) and its concepts. When the second
+query differs from the first after normalizing, it retrieves again and merges both lists with
+reciprocal rank fusion (`rrf_merge`, k=60): chunks are deduplicated by content hash, a chunk found
+by both queries ranks higher, each keeps its best rerank score, the list is cut to `RERANK_TOP`,
+and `grounded` is recomputed from the best score. Foreign turns (a session bound to another
+learner) skip the second query, and the classifier sees no history for them. If the second
+retrieval fails or finds nothing, the first result stands.
+
+Latency: the second retrieval runs after `classify`, which is already on the critical path before
+`policy`, so it adds one search (and one query embedding unless L3 has it) to most live turns. L3
+and L4 caches apply to it as to the first. Nothing has been measured live. Offline, with the
+heuristic classifier, the second query equals the first and is skipped.
+
+The offline eval's `retrieval_recall` uses the same path: `build_query` with the case's `code`,
+and fusion for cases that carry a scripted `search_query` (standing in for the classifier) and
+`history`.
 
 ### Rerankers
 

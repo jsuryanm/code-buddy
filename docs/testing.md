@@ -25,6 +25,7 @@ uv run python -m codebuddy.eval.run --json
 | `tests/unit/test_guard.py` | Leak guard: prose passes, code and fences blocked, streaming behavior |
 | `tests/unit/test_code_analysis.py` | The five bug patterns and false positives |
 | `tests/unit/test_cache.py` | Key ingredients, TTL, single-flight, layers, session bind (first learner wins), cacheability rule |
+| `tests/unit/test_query.py` | `build_query` terms per pattern and for parse errors, no code lines or learner identifiers, length cap; reciprocal rank fusion keeps and dedupes; classifier sees the last two history entries |
 | `tests/unit/test_rag.py` | Chunking, ingestion idempotence, hybrid retrieval, corpus access, filters |
 | `tests/unit/test_ui_client.py` | SSE parser, client errors, API key header, transcription upload, approval request |
 | `tests/unit/test_sandbox.py` | Real subprocess runs: traces, errors with line numbers, infinite loops, recursion, output cap, thirteen refused code patterns |
@@ -38,7 +39,7 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_api.py` | HTTP endpoints and SSE framing |
 | `tests/integration/test_api_hardening.py` | API keys, rate limits, the approval flow over HTTP (including another session being refused), speech upload limits and fallback, metrics, background judge |
 | `tests/integration/test_tools_hitl.py` | Pause and resume around running code: approve, decline, remember, syntax errors, reveals, refused code |
-| `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; query rewriting for short follow-ups only |
+| `tests/integration/test_cache_and_rewrite.py` | Semantic cache hit and no false positive; fusion of the classifier query, no history or second query on foreign turns |
 | `tests/integration/test_ui_smoke.py` | Streamlit page with a stub client |
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
 | `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409, concurrent first turns, and the graph backstop), the session status route on a bound session, list and forget endpoints |

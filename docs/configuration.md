@@ -144,5 +144,6 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `llm.py` | timeouts 3 s fast, 5 s standard, 30 s heavy | So fallback fires before the latency budget is gone |
 | `pedagogy/frustration.py` | 3 hints without progress, 2 repeated submissions | Frustration signals |
 | `sandbox/check.py` | 4000 characters; imports `math`, `random`, `string` | Sandbox allowlist |
-| `agent/nodes.py` | Short follow-up = 8 words or fewer | Messages that trigger query rewriting |
+| `rag/query.py` | query 300 characters, 6 code names, RRF k=60 | Retrieval query size and fusion |
+| `agent/deps.py` | 2 history entries, 200 characters each | Context the classifier sees to resolve "it" and "that" |
 | `api/security.py` | 15 minutes | How long a paused turn can wait for approval |

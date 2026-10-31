@@ -32,7 +32,7 @@ Built and tested offline (268 tests, offline eval passing):
 - Static analysis of learner Python (five bug patterns)
 - Cache layers L1 (answers), optional L2 (semantic), L3 (embeddings), L4 (retrieval), L6 (session)
   on Upstash Redis or memory
-- RAG ingestion and hybrid retrieval on Qdrant; query rewriting for short follow-ups
+- RAG ingestion and hybrid retrieval on Qdrant; code-aware queries and fusion with the classifier's standalone query
 - LangGraph tutor agent with durable checkpoints, FastAPI streaming API, Streamlit UI
 - Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, voice recording in the chat
   input with an editable transcript

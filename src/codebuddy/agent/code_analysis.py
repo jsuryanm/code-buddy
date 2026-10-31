@@ -7,9 +7,19 @@ how much of a finding the learner may see (spec 9.5).
 from __future__ import annotations
 
 import ast
+import builtins
 from dataclasses import dataclass, field
 
 _BUILTINS_OFTEN_SHADOWED = {"list", "dict", "sum", "max", "min", "len", "str", "int", "set", "id"}
+# Names safe to put in a search query: built-in functions and methods of the built-in
+# containers. Anything else the code calls is the learner's own identifier and stays out.
+_KNOWN_CALLS = frozenset(
+    name
+    for scope in (builtins, list, dict, str, set)
+    for name in dir(scope)
+    if name.islower() and not name.startswith("_") and callable(getattr(scope, name))
+) - {"print"}  # in nearly every snippet, so it tells the search nothing
+MAX_CALLS = 6
 
 
 @dataclass(frozen=True)
@@ -18,6 +28,7 @@ class BugPattern:
     concept: str
     symptom: str
     questions: tuple[str, ...]
+    search_terms: tuple[str, ...] = ()  # plain words the course material uses for it
 
 
 PATTERNS: dict[str, BugPattern] = {
@@ -31,6 +42,7 @@ PATTERNS: dict[str, BugPattern] = {
                 "What is the value of `i` on the very last pass of the loop?",
                 "How many items does the list have, and what is the largest valid index?",
             ),
+            ("range", "len", "index", "off-by-one"),
         ),
         BugPattern(
             "uninitialized_accumulator",
@@ -40,6 +52,7 @@ PATTERNS: dict[str, BugPattern] = {
                 "What value does the variable hold the first time the loop updates it?",
                 "Where in your code does that variable first get a value?",
             ),
+            ("accumulator", "starting value", "total"),
         ),
         BugPattern(
             "mutating_while_iterating",
@@ -49,6 +62,7 @@ PATTERNS: dict[str, BugPattern] = {
                 "What happens to the positions of the remaining items when one is removed?",
                 "Trace the loop by hand on [1, 2, 3]. Which items does it visit?",
             ),
+            ("loop", "list", "remove", "items"),
         ),
         BugPattern(
             "missing_base_case",
@@ -58,6 +72,7 @@ PATTERNS: dict[str, BugPattern] = {
                 "What input makes this function stop calling itself?",
                 "Trace the function with the smallest input you can think of. What happens?",
             ),
+            ("recursive function", "base case", "calls itself"),
         ),
         BugPattern(
             "shadowed_builtin",
@@ -67,6 +82,7 @@ PATTERNS: dict[str, BugPattern] = {
                 "What does the name you chose mean in Python before your assignment?",
                 "What happens when you try to call it after assigning to it?",
             ),
+            ("built-in function", "variable name"),
         ),
     )
 }
@@ -78,6 +94,7 @@ class CodeFeatures:
     patterns: list[str] = field(default_factory=list)
     loops: int = 0
     functions: list[str] = field(default_factory=list)
+    calls: list[str] = field(default_factory=list)  # built-ins and container methods called
 
 
 def analyze(code: str | None) -> CodeFeatures:
@@ -91,6 +108,8 @@ def analyze(code: str | None) -> CodeFeatures:
     feats = CodeFeatures()
     found: set[str] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            _note_call(node, feats.calls)
         if isinstance(node, ast.For | ast.While):
             feats.loops += 1
         if isinstance(node, ast.FunctionDef):
@@ -110,6 +129,13 @@ def analyze(code: str | None) -> CodeFeatures:
         found.add("uninitialized_accumulator")
     feats.patterns = sorted(found)
     return feats
+
+
+def _note_call(node: ast.Call, calls: list[str]) -> None:
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+    if name in _KNOWN_CALLS and name not in calls and len(calls) < MAX_CALLS:
+        calls.append(name)
 
 
 def _range_len_plus(node: ast.For) -> bool:

@@ -2,3 +2,8 @@
 {"query": "how do I debug a loop by tracing it by hand", "expect": "Trace the loop"}
 {"query": "why does an accumulator need a starting value", "expect": "starting value"}
 {"query": "what is a base case in recursion", "expect": "base case"}
+{"query": "why is it wrong", "code": "nums = [1, 2, 3]\nfor i in range(len(nums) + 1):\n    print(nums[i])\n", "expect": "off-by-one"}
+{"query": "why is it wrong", "code": "for n in [1, 2]:\n    total += n\n", "expect": "starting value"}
+{"query": "why does it never stop?", "code": "def f(n):\n    return f(n - 1)\n", "expect": "base case"}
+{"query": "and how do I find that?", "history": ["learner: my loop prints one item too many", "tutor: What is the last value of i?"], "search_query": "how to find an off-by-one error in a loop", "concepts": ["loop bounds"], "expect": "Trace the loop"}
+{"query": "it will not run at all", "code": "for i in range(3)\n    print(i)\n", "history": ["learner: I wrote a for loop over range"], "search_query": "for loop syntax over range", "concepts": ["for loop"], "expect": "A `for` loop walks"}

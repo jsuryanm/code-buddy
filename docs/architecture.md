@@ -94,10 +94,10 @@ flowchart LR
 | `analyze_code` | Parses Python with `ast`, records bug patterns and syntax errors | `agent/code_analysis.py` |
 | `check_cache` | L1 exact lookup when no code is attached; optional L2 semantic lookup; on a miss takes a single-flight lock so duplicate concurrent questions generate once. Skipped entirely for a learner with memory active | `agent/nodes.py` |
 | `emit_cached` | Streams the cached answer; skips every model call | `agent/nodes.py` |
-| `classify` | Fast-tier structured output: intent, PCDIT stage, concepts, search query. Rule-first for "show me the answer"; heuristic fallback on error. A new problem resets the hint ladder | `agent/deps.py` |
-| `retrieve` | Hybrid search over the `fundamentals` corpus using the message plus concepts of detected bug patterns. Runs in parallel with `classify` | `rag/retrieve.py` |
+| `classify` | Fast-tier structured output: intent, PCDIT stage, concepts, search query. Sees the last two history entries (200 characters each, delimited as data) to resolve "it" and "that"; none on foreign turns. Rule-first for "show me the answer"; heuristic fallback on error. A new problem resets the hint ladder | `agent/deps.py` |
+| `retrieve` | Hybrid search over the `fundamentals` corpus with `build_query()`: the message plus concepts and search terms of detected bug patterns and names of built-ins the code calls, never the code itself. Runs in parallel with `classify` | `rag/retrieve.py`, `rag/query.py` |
 | `recall_memory` | Only when memory is on and the turn has a verified learner token: searches that learner's notes with the message, under a timeout (`MEMORY_RECALL_TIMEOUT_S`). Errors and timeouts give no notes. Runs in parallel with `classify` and `retrieve` | `agent/nodes.py` |
-| `refine_retrieval` | Only for short follow-ups (8 words or fewer, with history): retrieves again using the classifier's standalone `search_query`. Most turns skip it | `agent/nodes.py` |
+| `refine_retrieval` | Retrieves again with the classifier's standalone `search_query` and concepts when that query differs from the first, then merges both lists by reciprocal rank fusion. Skipped for foreign turns. See [rag-and-ingestion.md](rag-and-ingestion.md#query-building-and-fusion) | `agent/nodes.py`, `rag/query.py` |
 | `policy` | `decide_mode()` with intent, progress, frustration signals, and the clock; also plans which tools to use | `pedagogy/policy.py` |
 | `route_tools` | Maps the learner's stored permission to run, ask, or skip | `tools/policy.py` |
 | `approve_run` | Pauses with `interrupt()` until the learner approves or declines running their code | `agent/nodes.py` |
@@ -106,8 +106,9 @@ flowchart LR
 | `update_state` | Advances the ladder, appends history, saves progress, starts a background memory write on a reveal or every Nth hint, stores cacheable answers (and the semantic index entry), releases the lock, counts the turn | `agent/nodes.py` |
 
 `classify`, `retrieve`, and `recall_memory` run in parallel and join before `refine_retrieval`, so
-retrieval does not wait for the classifier on ordinary turns, and memory adds no time unless it
-hits its timeout. Without memory `recall_memory` returns at once.
+the first retrieval does not wait for the classifier, and memory adds no time unless it hits its
+timeout. The second, fused retrieval does wait for the classifier, so it adds one search to most
+live turns (cached by L3 and L4; not measured live). Without memory `recall_memory` returns at once.
 
 ### Streaming events
 
@@ -179,7 +180,7 @@ not use the cache.
 
 ```mermaid
 flowchart LR
-    Q[query + concepts] --> W[warm query embedding]
+    Q[message + pattern terms<br/>+ built-in names] --> W[warm query embedding]
     W --> S[hybrid search<br/>dense + BM25, RRF fusion]
     S --> R[rerank]
     R --> T{best score >=<br/>threshold}

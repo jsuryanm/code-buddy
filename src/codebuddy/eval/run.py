@@ -8,7 +8,7 @@ Metrics (fake mode checks the machinery; they are not a quality score for a real
   guard_trigger_rate  share of scripted "leaky" replies the guard stopped (should be 100%)
   pattern_recall      bug patterns the static analysis found
   escalation_ok       the answer is offered after three hints and never revealed unasked
-  retrieval_recall    queries whose expected text appears in the top results
+  retrieval_recall    queries whose expected text appears in the top results (tutor query path)
 Exit code is 1 when a threshold fails, so CI can gate on it.
 """
 
@@ -35,6 +35,7 @@ from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.rag.fakes import HashSparse, ScriptedChat
 from codebuddy.rag.ingest import ingest_file
 from codebuddy.rag.manifest import Manifest
+from codebuddy.rag.query import build_query, rrf_merge
 from codebuddy.rag.retrieve import Retriever
 from codebuddy.rag.store import get_store
 
@@ -137,13 +138,19 @@ async def evaluate() -> dict[str, float]:
         m["mode"] == "hint" for m in metas
     )
 
-    # 4. Retrieval recall on the sample corpus.
+    # 4. Retrieval recall on the sample corpus, through the tutor's query path. A case with
+    # `search_query` (what the classifier would resolve from `history`) also runs the fusion.
     deps, _ = _offline_deps([])
     queries = _load("retrieval.jsonl")
     hits = 0
     for q in queries:
-        result = await deps.retriever.retrieve(q["query"])
-        hits += any(q["expect"].lower() in c.text.lower() for c in result.chunks)
+        features = analyze(q.get("code"))
+        chunks = (await deps.retriever.retrieve(build_query(q["query"], features))).chunks
+        if q.get("search_query"):
+            query = build_query(q["search_query"], features, q.get("concepts", []))
+            second = await deps.retriever.retrieve(query)
+            chunks = rrf_merge([chunks, second.chunks], deps.settings.rerank_top)
+        hits += any(q["expect"].lower() in c.text.lower() for c in chunks)
 
     return {
         "leak_rate": leaks / total,
