@@ -236,3 +236,32 @@ def test_live_step_box_stays_open_until_a_token_and_shows_errors():
     status = at.status[0]
     assert status.state == "error"
     assert current(at)["messages"] == []  # the failed question is not kept
+
+
+class DegradedClient(StubClient):
+    """Every model tier failed: the server sent its code-written text with degraded=True."""
+
+    def _degraded(self, mode, text):
+        meta = {"mode": mode, "level": 0 if mode == "hint" else 4, "can_show_answer": True,
+                "offer_answer": False, "stage": "T", "cached": False}  # fmt: skip
+        done = {"citations": [], "degraded": True, "stage": "T", "hints_given": 1}
+        return iter([("meta", meta), ("token", {"text": text}), ("done", done)])
+
+    def stream_turn(self, session_id, message, code, language="python"):
+        return self._degraded("hint", "Let's slow down. What should the output be?")
+
+    def stream_show_answer(self, session_id, code, language="python"):
+        return self._degraded("reveal", "I couldn't put the full answer together just now.")
+
+
+TROUBLE = "The tutor had trouble answering. Try again in a moment."
+
+
+def test_a_degraded_hint_shows_no_warning_and_a_degraded_reveal_keeps_show_answer():
+    at = make_app(DegradedClient())
+    at.chat_input[0].set_value("help").run()
+    assert not at.exception and not at.warning
+    at.button(key="show_answer").click().run()
+    assert not at.exception
+    assert [w.value for w in at.warning] == [TROUBLE]
+    assert at.button(key="show_answer").disabled is False  # the learner can press it again

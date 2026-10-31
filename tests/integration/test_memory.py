@@ -99,6 +99,16 @@ async def test_writes_on_reveal_and_every_fourth_hint(make_harness):
     assert any(i.kind is MemoryKind.PROCEDURAL for i in await memory.all(other))
 
 
+async def test_a_degraded_reveal_writes_no_memory(make_harness):
+    memory = InMemoryLearnerMemory()
+    down = dict(fast=ScriptedChat(fail=True), standard=ScriptedChat(fail=True))
+    h = make_harness(heavy=ScriptedChat(fail=True), memory=memory, **down)
+    out = await h.turn("show me the answer", code=BUGGY, learner_id=LEARNER)
+    await drain(h)
+    assert out["meta"]["mode"] == "reveal" and out["state"]["degraded"] is True
+    assert await memory.all(LEARNER) == []
+
+
 async def test_a_failing_write_does_not_break_the_turn(make_harness):
     h = make_harness(memory=FailingWrites())
     out = await h.turn("show me the answer", code=BUGGY, learner_id=LEARNER)

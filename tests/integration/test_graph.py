@@ -1,3 +1,5 @@
+import logging
+
 from codebuddy.agent.state import Classification
 from codebuddy.schemas import Intent, PcditStage
 from tests.helpers import ScriptedChat
@@ -82,18 +84,85 @@ async def test_explicit_request_on_first_turn_reveals(make_harness):
     assert out["meta"]["mode"] == "reveal"
 
 
-async def test_model_outage_degrades_to_course_material(make_harness):
-    h = make_harness(standard=ScriptedChat(fail=True))
+async def test_a_model_outage_on_every_tier_gives_a_normal_question(make_harness):
+    h = make_harness(standard=ScriptedChat(fail=True), fast=ScriptedChat(fail=True))
     out = await h.turn("why does my loop crash", code=BUGGY)
     assert out["state"]["degraded"] is True
-    assert "can't reach the tutor model" in out["text"]
-    assert out["state"]["progress"].hints_given == 1
+    assert "tutor model" not in out["text"] and out["text"].endswith("?")
+    progress = out["state"]["progress"]
+    assert progress.hints_given == 0 and progress.history == []  # the turn does not count
 
 
-async def test_an_empty_model_reply_counts_as_degraded(make_harness):
-    h = make_harness(standard=ScriptedChat(["", ""]))
+async def test_an_outage_falls_back_to_the_next_tier(make_harness):
+    h = make_harness(standard=ScriptedChat(fail=True), fast=ScriptedChat(["What is i?"]))
     out = await h.turn("why does my loop crash", code=BUGGY)
-    assert out["state"]["degraded"] is True and "can't reach the tutor model" in out["text"]
+    assert out["state"]["degraded"] is False and out["text"] == "What is i?"
+    assert out["state"]["progress"].hints_given == 1
+    assert (await h.deps.metrics.snapshot())["tier_fallbacks"] == 1
+
+
+async def test_an_empty_reply_on_every_tier_is_degraded_without_a_dump(make_harness):
+    h = make_harness(standard=ScriptedChat(["", ""]), fast=ScriptedChat([""]))
+    out = await h.turn("why does my loop crash", code=BUGGY)
+    assert out["state"]["degraded"] is True and "tutor model" not in out["text"]
+    assert "A loop repeats" not in out["text"]  # no raw course-material chunk
+
+
+async def test_heavy_empty_falls_back_to_standard_with_the_reveal_cap(make_harness):
+    heavy = ScriptedChat(["", ""])
+    standard = ScriptedChat(["Use range(len(nums)). Why does that stop in time?"])
+    h = make_harness(heavy=heavy, standard=standard)
+    out = await h.turn("show me the solution", code=BUGGY)
+    assert out["meta"]["mode"] == "reveal" and out["state"]["degraded"] is False
+    assert out["text"].startswith("Use range")
+    cap = h.deps.settings.max_tokens_reveal
+    assert [k["max_completion_tokens"] for k in heavy.kwargs] == [cap, min(cap * 4, 4000)]
+    assert standard.kwargs == [{"max_completion_tokens": cap}]
+    snap = await h.deps.metrics.snapshot()
+    assert snap["empty_replies"] == 2 and snap["tier_fallbacks"] == 1
+    assert out["state"]["progress"].reveals == 1
+
+
+async def test_a_degraded_reveal_keeps_the_ladder_and_says_try_again(make_harness):
+    empty = dict(heavy=ScriptedChat(["", ""]), fast=ScriptedChat([""]))
+    h = make_harness(standard=ScriptedChat(["Q?", ""]), **empty)
+    await h.turn("sum is wrong", code=BUGGY)
+    out = await h.turn("just show me the answer", code=BUGGY)
+    assert out["meta"]["mode"] == "reveal" and out["state"]["degraded"] is True
+    assert out["text"] == (
+        "I couldn't put the full answer together just now. Press Show answer again in a moment."
+    )
+    progress = out["state"]["progress"]
+    assert progress.reveals == 0 and progress.hints_given == 1 and progress.last_patterns
+    assert len(progress.history) == 2  # only the first, real turn
+
+
+async def test_a_degraded_explain_quotes_two_sentences_of_the_notes(make_harness):
+    h = make_harness(standard=ScriptedChat(["", ""]), fast=ScriptedChat([""]))
+    out = await h.turn("what is a loop")
+    assert out["meta"]["mode"] == "explain" and out["state"]["degraded"] is True
+    assert out["text"].startswith("Here is the short version from the course notes: ")
+    assert "```" not in out["text"] and "#" not in out["text"]
+    assert not await h.deps.answers.get(out["state"]["cache_key"])  # never cached
+
+
+async def test_the_leak_guard_applies_on_the_fallback_tier(make_harness):
+    fast = ScriptedChat(["Look closely.\nfor i in range(len(nums)):\n    pass\n"])
+    h = make_harness(standard=ScriptedChat(fail=True), fast=fast)
+    out = await h.turn("fix it", code=BUGGY)
+    assert "range(len(nums))" not in out["text"]
+    assert out["state"]["guarded"] is True and out["state"]["degraded"] is False
+
+
+async def test_failed_tiers_log_one_line_each_without_a_traceback(make_harness, caplog):
+    h = make_harness(standard=ScriptedChat(["", ""]), fast=ScriptedChat(fail=True))
+    with caplog.at_level(logging.WARNING, logger="codebuddy.agent"):
+        await h.turn("why does my loop crash", code=BUGGY)
+    lines = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(lines) == 2 and all(r.exc_info is None for r in lines)
+    assert "tier=standard" in lines[0].getMessage() and "finish_reason" in lines[0].getMessage()
+    assert "tier=fast" in lines[1].getMessage() and "RuntimeError" in lines[1].getMessage()
+    assert all("loop crash" not in r.getMessage() for r in caplog.records)
 
 
 async def test_concept_answers_are_cached_but_hints_are_not(make_harness):
@@ -156,12 +225,13 @@ async def test_an_empty_reply_is_retried_once_with_a_bigger_cap(make_harness):
     assert (await h.deps.metrics.snapshot())["empty_replies"] == 1
 
 
-async def test_two_empty_replies_degrade_as_before(make_harness):
-    model = ScriptedChat(["", ""])
-    h = make_harness(standard=model)
+async def test_two_empty_replies_fall_down_to_the_fast_tier(make_harness):
+    model, fast = ScriptedChat(["", ""]), ScriptedChat(["What is i last?"])
+    h = make_harness(standard=model, fast=fast)
     out = await h.turn("why does my loop crash", code=BUGGY)
-    assert out["state"]["degraded"] is True and "can't reach the tutor model" in out["text"]
-    assert (await h.deps.metrics.snapshot())["empty_replies"] == 1
+    assert out["state"]["degraded"] is False and out["text"] == "What is i last?"
+    assert fast.kwargs == [{"max_completion_tokens": h.deps.settings.max_tokens_hint}]
+    assert (await h.deps.metrics.snapshot())["empty_replies"] == 2
 
 
 async def test_the_leak_guard_still_applies_to_the_retry(make_harness):

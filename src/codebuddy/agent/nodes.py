@@ -26,7 +26,12 @@ from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS, decide_mode, fixed_it, shape
 from codebuddy.pedagogy.quiz import advance, quiz_meta
-from codebuddy.pedagogy.templates import fallback_text, system_prompt, user_prompt
+from codebuddy.pedagogy.templates import (
+    degraded_text,
+    fallback_text,
+    system_prompt,
+    user_prompt,
+)
 from codebuddy.rag.query import build_query, rrf_merge
 from codebuddy.rag.retrieve import RetrievalResult
 from codebuddy.schemas import Citation, Decision, HintLevel, Intent, Mode
@@ -429,13 +434,13 @@ class TutorNodes:
 
     # -- generation ------------------------------------------------------------------
 
-    def _tier(self, decision: Decision):
-        t = self.d.tiers
+    @staticmethod
+    def _tier(decision: Decision) -> str:
         if decision.mode is Mode.REVEAL:
-            return t.heavy
+            return "heavy"
         if decision.mode is Mode.REDIRECT:
-            return t.fast
-        return t.standard
+            return "fast"
+        return "standard"
 
     def _max_tokens(self, decision: Decision) -> int:
         s = self.d.settings
@@ -513,54 +518,71 @@ class TutorNodes:
                 parts.append(text)
                 writer({"type": "token", "text": text})
 
-        async def attempt(max_tokens: int) -> object | None:
+        async def attempt(model, max_tokens: int) -> object | None:
             """Stream one call through a fresh guard; return the last chunk (for diagnostics)."""
             guard = StreamGuard(
                 enforce=enforce, allow_pseudocode=decision.level is HintLevel.SCAFFOLD
             )
             last = None
-            # Per-call kwarg: RunnableWithFallbacks passes it to every tier, so fallbacks keep it.
-            cap = {"max_completion_tokens": max_tokens}
-            async for chunk in self._tier(decision).astream(messages, **cap):
+            async for chunk in model.astream(messages, max_completion_tokens=max_tokens):
                 last = chunk
                 emit(guard.feed(_text(chunk)))
             emit(guard.flush())
             return last
 
+        mode = decision.mode.value
+        base = self._max_tokens(decision)
         try:
-            base = self._max_tokens(decision)
-            last = await attempt(base)
-            if not parts:
-                # A reasoning model can spend the whole cap on hidden reasoning. Retry once
-                # with more headroom; log metadata only, never prompt or learner text.
-                await self.d.metrics.incr("empty_replies")
-                log.warning(
-                    "empty model reply (mode=%s, cap=%d): finish_reason=%s usage=%s",
-                    decision.mode.value,
-                    base,
-                    (getattr(last, "response_metadata", None) or {}).get("finish_reason"),
-                    getattr(last, "usage_metadata", None),
-                )
-                await attempt(min(base * 4, 4000))
-            if not parts:
-                raise RuntimeError("the model returned an empty reply")
+            # Heavier tier first, then each lighter one with the same cap. An error or an empty
+            # reply moves down a tier. Logs carry metadata only, never prompt or learner text.
+            for i, (tier, model) in enumerate(self.d.tiers.chain(self._tier(decision))):
+                if i:
+                    await self.d.metrics.incr("tier_fallbacks")
+                # A reasoning model can spend the whole cap on hidden reasoning, so the mode's
+                # own tier gets one retry with more headroom.
+                caps = [base, min(base * 4, 4000)] if i == 0 else [base]
+                last = error = None
+                for cap in caps:
+                    try:
+                        last = await attempt(model, cap)
+                    except LeakDetected:
+                        raise
+                    except Exception as exc:
+                        error = exc
+                        break
+                    if parts:
+                        break
+                    await self.d.metrics.incr("empty_replies")
+                if parts and error is None:
+                    break
+                if error is not None:
+                    log.warning(
+                        "model call failed (mode=%s, tier=%s): %s", mode, tier, type(error).__name__
+                    )
+                    log.debug("model call failure detail", exc_info=error)
+                else:
+                    log.warning(
+                        "empty model reply (mode=%s, tier=%s): finish_reason=%s usage=%s",
+                        mode,
+                        tier,
+                        (getattr(last, "response_metadata", None) or {}).get("finish_reason"),
+                        getattr(last, "usage_metadata", None),
+                    )
+                if parts:
+                    break  # part of a reply was already streamed and cannot be taken back
+            if not parts or error is not None:
+                degraded = True
         except LeakDetected as leak:
             log.info("leak guard stopped a reply: %s", leak.reason)
             guarded = True
             await self.d.metrics.incr("guard_stops")
             concept = cls.concepts[0] if cls and cls.concepts else None
             emit(("\n\n" if parts else "") + fallback_text(stage, concept))
-        except Exception:
-            log.warning("generation failed, degrading", exc_info=True)
-            degraded = True
+        if degraded:
             await self.d.metrics.incr("degraded")
-            snippet = retrieval.chunks[0].text[:600] if retrieval.chunks else ""
-            emit(
-                ("\n\n" if parts else "")
-                + "I can't reach the tutor model right now, so here is what the course "
-                "material says instead."
-                + (f"\n\n{snippet}" if snippet else " Please try again in a moment.")
-            )
+            concept = cls.concepts[0] if cls and cls.concepts else None
+            source = retrieval.chunks[0].text if retrieval.grounded and retrieval.chunks else None
+            emit(("\n\n" if parts else "") + degraded_text(decision.mode, stage, concept, source))
 
         citations = [
             Citation(source=c.source, section=c.section, corpus=c.corpus) for c in retrieval.chunks
@@ -628,11 +650,16 @@ class TutorNodes:
 
         had_history = bool(progress.history)  # the prompt depended on earlier turns
         hints_before = progress.hints_given
+        # Every model tier failed: the learner got no real reply, so the turn does not count
+        # (no ladder step or reset, no history, no memory write, no cache store).
+        degraded = bool(state.get("degraded"))
         if state.get("quiz_turn"):
             # The ladder stays reset during a quiz; the quiz has its own one hint. A hint that
-            # degraded (model unavailable) does not use up the learner's try.
-            if state.get("degraded"):
+            # degraded does not use up the learner's try.
+            if degraded:
                 progress.quiz = state.get("quiz_prior")
+        elif degraded:
+            pass
         elif decision.mode is Mode.HINT:
             progress.hints_given += 1
             progress.started_at = progress.started_at or self.d.clock()
@@ -650,14 +677,15 @@ class TutorNodes:
             and features
             and not features.parse_error
             and not state.get("quiz_turn")
+            and not degraded
         ):
             progress.last_patterns = features.patterns  # what the next fix is judged against
             progress.last_shape = shape(features) if features.patterns else None
-        if decision.mode is Mode.REVEAL:  # pasting the revealed solution is not a fix
+        if decision.mode is Mode.REVEAL and not degraded:  # pasting the solution is not a fix
             progress.last_patterns, progress.last_shape = [], None
 
         at = str(self.d.clock())  # lets a later write skip turns from before Forget me
-        if not state.get("foreign"):
+        if not state.get("foreign") and not degraded:
             progress.history = [
                 *progress.history,
                 {"role": "learner", "text": state["message"][:HISTORY_CHARS], "at": at},
@@ -665,14 +693,15 @@ class TutorNodes:
             ][-HISTORY_TURNS:]
         await self.d.sessions.save(progress)
         await self.d.metrics.incr("turns")
-        await self._remember(state, decision, progress, hints_before)
+        if not degraded:
+            await self._remember(state, decision, progress, hints_before)
 
         key = state.get("cache_key")
         retrieval = state.get("retrieval")
         if (
             key
             and not state.get("cache_hit")
-            and not state.get("degraded")
+            and not degraded
             and not state.get("guarded")
             and not had_history  # the key ignores history, so only first-turn replies are shared
             and retrieval is not None

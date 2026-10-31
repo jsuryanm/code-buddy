@@ -98,6 +98,7 @@ Explicit requests are matched by `asks_for_answer()`, for example "show me the a
 | Quiz started | `quiz_offer`, `last_patterns`, `last_shape` cleared; ladder reset |
 | Learner answers the run-my-code prompt | `run_permission` becomes `allow` or `deny` (if "remember" was chosen) |
 | Every turn | Stage updated from the classifier; last 6 messages kept (500 chars each) |
+| Degraded turn (every model tier failed) | Counts for nothing: no hint step, no reveal or ladder reset, no fix confirmation, `last_patterns` kept, no history, no memory write. Show answer stays available after a degraded reveal |
 
 ## Fix detection
 

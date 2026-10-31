@@ -6,6 +6,8 @@ from codebuddy.pedagogy.templates import (
     ERROR_TEMPLATE,
     LEVEL_RULES,
     STYLE_RULE,
+    degraded_text,
+    fallback_text,
     system_prompt,
 )
 from codebuddy.schemas import Decision, HintLevel, Mode, PcditStage
@@ -83,3 +85,38 @@ def test_the_reply_after_a_fix_acknowledges_it_and_asks_nothing_new():
     assert STYLE_RULE in prompt and "at most 40 words" in prompt
     assert "quiz" in prompt and "do not write new or corrected code" in prompt
     assert "why the fix works" not in prompt  # it was already asked
+
+
+CHUNK = (
+    "## Loops\n\nA loop repeats a block of code. A `for` loop walks over a sequence.\n\n"
+    "```python\nfor n in [3, 5]:\n    print(n)\n```\n\nThe loop ends by itself."
+)
+
+
+def test_a_degraded_hint_or_confirm_reads_like_a_normal_question():
+    for mode in (Mode.HINT, Mode.CONFIRM):
+        assert degraded_text(mode, PcditStage.T, "loops") == fallback_text(PcditStage.T, "loops")
+
+
+def test_a_degraded_explain_gives_two_clean_sentences_from_the_notes_only_if_grounded():
+    text = degraded_text(Mode.EXPLAIN, PcditStage.P, source=CHUNK)
+    assert text == (
+        "Here is the short version from the course notes: A loop repeats a block of code. "
+        "A `for` loop walks over a sequence."
+    )
+    assert degraded_text(Mode.EXPLAIN, PcditStage.P) == (
+        "Let me get back to that. Try asking again in a moment."
+    )
+
+
+def test_a_degraded_reveal_has_no_partial_solution_and_redirect_stays_short():
+    reveal = degraded_text(Mode.REVEAL, PcditStage.I, source=CHUNK)
+    assert reveal == (
+        "I couldn't put the full answer together just now. Press Show answer again in a moment."
+    )
+    assert "programming question" in degraded_text(Mode.REDIRECT, PcditStage.P)
+
+
+@pytest.mark.parametrize("mode", [m for m in Mode if m is not Mode.QUIZ])
+def test_no_degraded_text_mentions_the_tutor_model(mode):
+    assert "tutor model" not in degraded_text(mode, PcditStage.P, "loops", CHUNK)

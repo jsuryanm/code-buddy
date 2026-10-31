@@ -32,13 +32,13 @@ def _tiers(effort="minimal"):
         reasoning_effort=effort,
     )
     t = build_tiers(s)
-    return t.fast, t.standard, t.heavy.runnable
+    return t.fast, t.standard, t.heavy
 
 
 def test_reasoning_effort_is_sent_only_to_reasoning_models(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "k")
     fast, standard, heavy = _tiers()
-    assert fast.reasoning_effort is None and standard.runnable.reasoning_effort is None
+    assert fast.reasoning_effort is None and standard.reasoning_effort is None
     assert heavy.reasoning_effort == "minimal"
     assert "reasoning_effort" not in fast._get_request_payload([("human", "hi")])
     assert heavy._get_request_payload([("human", "hi")])["reasoning_effort"] == "minimal"

@@ -207,8 +207,8 @@ flowchart LR
 |---|---|
 | Classifier call fails | `heuristic_classification()`: code present means debug help, otherwise concept question |
 | Retrieval raises | Empty, ungrounded result; the prompt tells the model no context was found |
-| Heavy or standard model fails | `.with_fallbacks()` retries the next lighter tier |
-| Every generation tier fails | Degraded reply: apology plus the top course-material snippet; `degraded=True`; the learner's turn still counts as a hint |
+| Heavy or standard model fails or replies empty | `generate` tries the next lighter tier with the same token cap and a fresh leak guard (heavy, standard, fast); `tier_fallbacks` counts each step down. The mode's own tier first gets one retry with a bigger cap on an empty reply. One warning line per failed tier (mode, tier, finish reason and usage, or the exception type), no traceback |
+| Every generation tier fails | Degraded reply written by code (`degraded_text()` in `pedagogy/templates.py`): a hint or confirm gets the usual stage question, an explanation gets two sentences of the top grounded chunk (or "try again"), a reveal says to press Show answer again, a redirect gets the usual redirect. `degraded=True`. The turn does not count: no ladder step or reset, no history, no memory write, no cache store |
 | Leak guard fires | Safe stage question appended; `guarded=True` |
 | Upstash not configured | In-process cache with a warning |
 | Graph raises | API sends an `error` SSE event |

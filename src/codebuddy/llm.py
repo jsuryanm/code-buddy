@@ -1,7 +1,8 @@
 """OpenAI model tiers built through LangChain (spec 11).
 
-fast -> standard -> heavy. A heavier tier falls back to the next lighter one on error,
-so the learner gets a (slightly weaker) answer instead of a failure.
+fast -> standard -> heavy. Generation falls back from a heavier tier to the next lighter one on
+an error or an empty reply (agent/nodes.py), so the learner gets a (slightly weaker) answer
+instead of a failure.
 """
 
 from __future__ import annotations
@@ -37,19 +38,30 @@ def _chat(model_id: str, settings: Settings, timeout: int) -> ChatOpenAI:
 
 @dataclass
 class Tiers:
-    """Chat runnables per tier. `fast_base` is the raw model used for structured output."""
+    """Chat models per tier, tried heavy -> standard -> fast by `generate`. `fast_base` is the
+    model used for structured output."""
 
     fast: Runnable
     standard: Runnable
     heavy: Runnable
     fast_base: object | None = None
 
+    def chain(self, tier: str) -> list[tuple[str, Runnable]]:
+        """The named tier, then each lighter one; a model shared by two tiers is tried once."""
+        names = ("heavy", "standard", "fast")
+        out: list[tuple[str, Runnable]] = []
+        for name in names[names.index(tier) :]:
+            model = getattr(self, name)
+            if all(model is not m for _, m in out):
+                out.append((name, model))
+        return out
+
 
 def build_tiers(settings: Settings) -> Tiers:
     fast_id, standard_id, heavy_id = settings.require_models()
     fast = _chat(fast_id, settings, 3)
-    standard = _chat(standard_id, settings, 5).with_fallbacks([fast])
-    heavy = _chat(heavy_id, settings, 30).with_fallbacks([standard])
+    standard = _chat(standard_id, settings, 5)
+    heavy = _chat(heavy_id, settings, 30)
     return Tiers(fast=fast, standard=standard, heavy=heavy, fast_base=fast)
 
 

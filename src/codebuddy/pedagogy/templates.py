@@ -205,3 +205,30 @@ def fallback_text(stage: PcditStage, concept: str | None = None) -> str:
     question = STAGE_QUESTIONS[stage][0]
     lead = f"Let's think about {concept} together. " if concept else "Let's slow down. "
     return lead + question
+
+
+REDIRECT_TEXT = "That is outside what I can help with here. Ask me a programming question!"
+FENCE = re.compile(r"```.*?(```|$)", re.DOTALL)
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def degraded_text(
+    mode: Mode, stage: PcditStage, concept: str | None = None, source: str | None = None
+) -> str:
+    """Written by code when every model tier failed. `source` is the top grounded chunk."""
+    if mode is Mode.REVEAL:
+        return (
+            "I couldn't put the full answer together just now. Press Show answer again in a moment."
+        )
+    if mode is Mode.REDIRECT:
+        return REDIRECT_TEXT
+    if mode is Mode.EXPLAIN:
+        lines = FENCE.sub(" ", source or "").splitlines()
+        prose = " ".join(
+            ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")
+        )
+        sentences = [s for s in SENTENCE_END.split(prose) if s][:2]
+        if not sentences:
+            return "Let me get back to that. Try asking again in a moment."
+        return "Here is the short version from the course notes: " + " ".join(sentences)
+    return fallback_text(stage, concept)

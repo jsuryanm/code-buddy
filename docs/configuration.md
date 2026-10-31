@@ -55,10 +55,13 @@ The caps apply per mode, on every tier including fallbacks. A reply that hits on
 keep them above the prompt word limits. The cap is sent as `max_completion_tokens`, which on
 reasoning models also counts the hidden reasoning tokens, so a reasoning tier needs more headroom
 (hence the 1500 reveal default). Two safeguards: models whose ID starts with `gpt-5`, `o1`, `o3` or
-`o4` get `reasoning_effort` (below), and an empty reply is retried once with a cap of 4 times the
-original (at most 4000) before it degrades (course-material fallback, `degraded: true`, the
-`degraded` counter). Each empty first attempt bumps `empty_replies` and logs a warning with the
-mode, cap, finish reason and token usage (never prompt or learner text).
+`o4` get `reasoning_effort` (below), and an empty reply on the mode's tier is retried once with a
+cap of 4 times the original (at most 4000). If that is empty too, or the call fails, the next
+lighter tier is tried with the original cap (`tier_fallbacks` counter). Only when every tier fails
+does the turn degrade (a short reply written by code, `degraded: true`, the `degraded` counter).
+Each empty attempt bumps `empty_replies`; each failed tier logs one warning with the mode, tier,
+finish reason and token usage, or the exception type, without a traceback (never prompt or learner
+text).
 
 | Variable | Default | Meaning |
 |---|---|---|

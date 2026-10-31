@@ -355,12 +355,14 @@ def reply_caption(meta: dict | None) -> str:
 
 
 def render_footer(meta: dict | None, done: dict | None) -> None:
-    """Caption, outage warning, and the collapsed references under a tutor reply."""
+    """Caption, trouble warning, and the collapsed references under a tutor reply."""
     caption = reply_caption(meta)
     if caption:
         st.caption(caption)
-    if done and done.get("degraded"):
-        st.warning("The tutor model was unavailable, so this is course material only.")
+    # A degraded hint reads like a normal question; only a missing answer or explanation says so.
+    degraded = done and done.get("degraded")
+    if degraded and (meta or {}).get("mode") in ("reveal", "explain"):
+        st.warning("The tutor had trouble answering. Try again in a moment.")
     render_references((done or {}).get("citations") or [])
 
 
@@ -594,7 +596,9 @@ def apply_result(chat: dict, result: dict) -> None:
         chat["can_show"] = bool(meta.get("can_show_answer"))  # the server's policy decides
         chat["offer"] = bool(meta.get("offer_answer"))
         if meta.get("mode") == "reveal":
-            chat["can_show"], chat["offer"] = False, False
+            # After a degraded reveal the learner can press Show answer again.
+            chat["can_show"] = bool(done and done.get("degraded"))
+            chat["offer"] = False
         was_quiz = chat["quiz"]
         chat["quiz_offer"], chat["quiz"] = bool(meta.get("offer_quiz")), meta.get("quiz")
         if meta.get("quiz_code"):  # a new quiz question: put its code in the box to edit

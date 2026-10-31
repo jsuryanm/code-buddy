@@ -10,7 +10,7 @@ COUNTERS = (
     "approvals_requested", "approvals_granted", "approvals_declined",
     "judge_checked", "judge_flagged", "stt_requests", "stt_failures", "rate_limited",
     "memory_recalls", "memory_writes", "memory_failures", "refine_timeouts",
-    "empty_replies",
+    "empty_replies", "tier_fallbacks",
 )  # fmt: skip
 
 

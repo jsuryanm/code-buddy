@@ -301,9 +301,9 @@ async def test_a_degraded_quiz_hint_does_not_use_up_the_try(quiz_client):
     client, h = quiz_client()
     async with client:
         await fix_then_quiz(client)
-        h.tiers.standard.fail = True
+        h.tiers.standard.fail = h.tiers.fast.fail = True
         r = await answer(client, QUIZ[0].snippet + "# hm\n")
-    assert "can't reach the tutor model" in r.text
+    assert '"degraded": true' in r.text and "tutor model" not in r.text
     assert (await h.deps.sessions.load("q")).quiz["tries"] == 0
 
 
