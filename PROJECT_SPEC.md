@@ -600,7 +600,7 @@ What a gateway would have provided, and where it now lives:
 |---|---|
 | Central API-key management | Keys in secret manager; separate OpenAI project per environment (dev / staging / prod) |
 | Budgets | Monthly limits on each OpenAI project; per-user and per-session budgets as Redis counters in the app (OpenAI does not enforce per-end-user budgets) |
-| Fallback routing | Tier fallback with LangChain `.with_fallbacks()` (Section 11.4) |
+| Fallback routing | Tier chain in `generate`: an error or an empty reply moves to the next lighter tier (Section 11.4) |
 | Task routing (small vs heavy) | Tier-to-model mapping in config (Sections 11.2–11.3) |
 | Retries and timeouts | `ChatOpenAI(max_retries=..., timeout=...)` |
 | Logging and cost attribution | Langfuse callback tags (tier, task class, hashed user) |
@@ -633,8 +633,10 @@ tiers:
 from langchain_openai import ChatOpenAI
 
 fast = ChatOpenAI(model=FAST_ID, timeout=1.5, max_retries=2)
-standard = ChatOpenAI(model=STD_ID, timeout=2.0, max_retries=2).with_fallbacks([fast])
-heavy = ChatOpenAI(model=HEAVY_ID, timeout=15, max_retries=1).with_fallbacks([standard])
+standard = ChatOpenAI(model=STD_ID, timeout=2.0, max_retries=2)
+heavy = ChatOpenAI(model=HEAVY_ID, timeout=15, max_retries=1)
+# generate() walks heavy -> standard -> fast itself, so an empty reply (which is not an
+# exception, e.g. a reasoning model that spent its token cap) also falls down a tier.
 ```
 
 ### 11.3 Task-based routing
@@ -853,7 +855,7 @@ flowchart TB
     end
 
     subgraph LLMs["OpenAI via LangChain"]
-        RT[Tier router<br/>+ with_fallbacks]
+        RT[Tier router<br/>+ tier chain]
         S[tutor-fast]
         M[tutor-standard]
         H[tutor-heavy]
@@ -1114,7 +1116,7 @@ well-documented tools.
 | **Vector DB** | **Qdrant** via `langchain-qdrant` (hybrid mode) | Hybrid search, filtering, quantization, simple ops | Upstash Vector, pgvector, Weaviate |
 | **Cache / state / rate limit** | **Upstash Redis** (+ `@upstash/ratelimit`; LangChain Upstash cache and chat-history integrations) | Serverless, per-request pricing, low-latency global reads, REST access | Redis Cloud, self-hosted Redis |
 | **Relational DB** | **PostgreSQL** (Neon/Supabase/RDS) | Users, progress, checkpoints, audit | SQLite for prototype |
-| **LLM provider** | **OpenAI API** via `langchain-openai` (`ChatOpenAI`, `OpenAIEmbeddings`); no gateway in v1 | One vendor, one SDK, built-in retries and `.with_fallbacks()` | LiteLLM Proxy, or a second provider behind the same LangChain interface if open question 8 requires it |
+| **LLM provider** | **OpenAI API** via `langchain-openai` (`ChatOpenAI`, `OpenAIEmbeddings`); no gateway in v1 | One vendor, one SDK, built-in retries and a tier chain on errors or empty replies | LiteLLM Proxy, or a second provider behind the same LangChain interface if open question 8 requires it |
 | **Tool protocol** | **MCP** (official Python/TS SDKs, FastMCP) | Open standard for tools | Native function calling only |
 | **STT** | **Groq Whisper API** (`whisper-large-v3-turbo`), fallback OpenAI transcription | Very fast hosted Whisper, single key, vocabulary `prompt` | faster-whisper (self-hosted), browser Web Speech API |
 | **Embeddings** | OpenAI `text-embedding-3-small` via `OpenAIEmbeddings` (versioned; `-large` only if benchmark justifies) | Same vendor as LLM; cheap; pick via golden-set benchmark | Open BGE/E5 via sentence-transformers if data must stay local |
@@ -1142,7 +1144,7 @@ own the Socratic logic.
 
 | Need | LangChain / LangGraph integration | Replaces |
 |---|---|---|
-| Chat models, retries, fallbacks | `langchain-openai` `ChatOpenAI` with `max_retries` and `.with_fallbacks()` | LLM gateway and router |
+| Chat models, retries, fallbacks | `langchain-openai` `ChatOpenAI` with `max_retries` and a tier chain in `generate` | LLM gateway and router |
 | Structured outputs (intent, stage) | `.with_structured_output(PydanticModel)` | Hand-written JSON parsing |
 | Embeddings | `OpenAIEmbeddings` | Custom embedding client and batching |
 | Vector store, hybrid search | `langchain-qdrant` `QdrantVectorStore` in hybrid mode | Custom Qdrant query code |

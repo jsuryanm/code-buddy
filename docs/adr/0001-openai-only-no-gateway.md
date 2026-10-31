@@ -10,7 +10,9 @@ small-versus-heavy task routing across providers.
 Use OpenAI as the only provider through `langchain-openai`. No gateway service.
 
 - Task routing: three tiers (fast, standard, heavy) with model IDs from environment variables.
-- Fallback: `.with_fallbacks()` chains heavy to standard to fast, then a degraded reply.
+- Fallback: `generate` chains heavy to standard to fast on an error or an empty reply, then a
+  degraded reply. (Originally `.with_fallbacks()`, replaced because an empty reply is not an
+  exception, so it never triggered the fallback.)
 - Keys: secret manager or `.env`; one OpenAI project per environment with a budget set in OpenAI.
 - Per-user budgets, if needed, are Redis counters in the app.
 
