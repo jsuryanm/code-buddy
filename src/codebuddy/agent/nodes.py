@@ -91,13 +91,16 @@ class TutorNodes:
                 progress.repeated_submissions = 0
                 progress.last_submission_hash = digest
         update = {"progress": progress, "message": message, "code": code or None}
-        if learner_id := state.get("learner_id"):
-            if progress.learner_id is None:
-                progress.learner_id = learner_id  # the API refuses other learners from now on
-                progress.history = []  # turns made before binding never reach this memory
-            elif progress.learner_id != learner_id:  # lost a race with the API check
-                log.warning("session is bound to another learner; memory is off for this turn")
-                update["learner_id"] = None
+        learner_id = state.get("learner_id")
+        if learner_id and progress.learner_id is None:
+            progress.learner_id = learner_id  # the API refuses other learners from now on
+            progress.history = []  # turns made before binding never reach this memory
+        elif progress.learner_id is not None and progress.learner_id != learner_id:
+            # Lost a race with the API check (another learner, or none): the turn still gets a
+            # reply, but it neither reads nor adds to the bound learner's history or memory.
+            log.warning("session is bound to another learner; memory and history are off")
+            update["learner_id"] = None
+            update["foreign"] = True
         return update
 
     async def analyze_code(self, state: TutorState) -> dict:
@@ -241,7 +244,7 @@ class TutorNodes:
         message = state["message"]
         query = cls.search_query.strip()
         short = len(message.split()) <= SHORT_FOLLOWUP_WORDS
-        if not (short and state["progress"].history and query):
+        if not (short and state["progress"].history and query) or state.get("foreign"):
             return {}
         if keys.normalize(query) == keys.normalize(message):
             return {}
@@ -399,7 +402,7 @@ class TutorNodes:
                     state.get("code"),
                     context,
                     findings,
-                    progress.history,
+                    [] if state.get("foreign") else progress.history,
                     state.get("memories"),
                     self.d.settings.memory_recall_limit,
                 ),
@@ -512,11 +515,12 @@ class TutorNodes:
             progress.repeated_submissions = 0
 
         at = str(self.d.clock())  # lets a later write skip turns from before Forget me
-        progress.history = [
-            *progress.history,
-            {"role": "learner", "text": state["message"][:HISTORY_CHARS], "at": at},
-            {"role": "tutor", "text": reply[:HISTORY_CHARS], "at": at},
-        ][-HISTORY_TURNS:]
+        if not state.get("foreign"):
+            progress.history = [
+                *progress.history,
+                {"role": "learner", "text": state["message"][:HISTORY_CHARS], "at": at},
+                {"role": "tutor", "text": reply[:HISTORY_CHARS], "at": at},
+            ][-HISTORY_TURNS:]
         await self.d.sessions.save(progress)
         await self.d.metrics.incr("turns")
         await self._remember(state, decision, progress, hints_before)

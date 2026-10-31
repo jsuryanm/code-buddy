@@ -156,7 +156,7 @@ def create_app(
         bound = (await d.sessions.load(session_id)).learner_id  # outlives an expired claim
         if not bound:
             bound = (
-                await d.sessions.bind(session_id, learner_id, d.settings.ttl_session)
+                await d.sessions.bind(session_id, learner_id)
                 if learner_id
                 else await d.sessions.owner(session_id)
             )

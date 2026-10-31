@@ -91,8 +91,9 @@ receives only the verified id.
   session gets HTTP 409 `This session belongs to another learner`, and so does a turn or
   show-answer on that session sent without a token. The first turn claims the session with an
   atomic set-if-absent in the session cache (key `cb:bind:<session>`, lifetime `TTL_SESSION`), so
-  two first turns from different learners cannot both bind: one gets 409. The graph still skips
-  memory for a learner the session is not bound to, as a safety net.
+  two first turns from different learners cannot both bind: one gets 409. As a safety net, a turn
+  that reaches the graph for a bound session with another learner or none still gets a reply, but
+  it skips memory and neither sees nor adds to the bound learner's history.
 - `GET /v1/session/{id}` on a bound session needs the same learner's token in header
   `X-Learner-Token`: none or another learner's is 409, an invalid one 403. Unbound sessions answer
   without it.

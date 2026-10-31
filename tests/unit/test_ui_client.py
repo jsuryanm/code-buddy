@@ -179,3 +179,27 @@ def test_api_error_carries_the_status_and_none_when_unreachable():
     with pytest.raises(ApiError) as err:
         list(_client(refuse).stream_turn("s", "hi", None))
     assert err.value.status is None
+
+
+class DropAfterHeaders(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b'event: token\ndata: {"text": "Hi"}\n\n'
+        raise httpx.ReadError("connection dropped")
+
+
+def test_api_error_says_whether_the_request_reached_the_server():
+    def refuse(request):
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(ApiError) as err:
+        list(_client(refuse).stream_approve("s", "t1", True))
+    assert err.value.status is None and err.value.reached is False
+
+    dropped = _client(lambda r: httpx.Response(200, stream=DropAfterHeaders()))
+    with pytest.raises(ApiError) as err:
+        list(dropped.stream_approve("s", "t1", True))
+    assert err.value.status is None and err.value.reached is True
+
+    with pytest.raises(ApiError) as err:
+        list(_client(lambda r: httpx.Response(429, text="slow")).stream_approve("s", "t1", True))
+    assert err.value.status == 429 and err.value.reached is True

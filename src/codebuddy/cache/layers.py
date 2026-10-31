@@ -131,9 +131,11 @@ class SessionStore:
             keys.session_key(progress.session_id), progress.model_dump_json(), self._ttl
         )
 
-    async def bind(self, session_id: str, learner_id: str, ttl: int) -> str:
-        """Claim the session for `learner_id` unless someone holds it. Returns the owner."""
-        while not await self._cache.set_nx(keys.bind_key(session_id), learner_id, ttl):
+    async def bind(self, session_id: str, learner_id: str) -> str:
+        """Claim the session for `learner_id` unless someone holds it. Returns the owner.
+
+        The claim lives as long as the session itself (the store's TTL)."""
+        while not await self._cache.set_nx(keys.bind_key(session_id), learner_id, self._ttl):
             if (owner := await self.owner(session_id)) is not None:
                 return owner  # else the claim expired in between: try again
         return learner_id

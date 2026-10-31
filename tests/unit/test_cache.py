@@ -128,8 +128,10 @@ async def test_session_bind_keeps_the_first_learner():
     clock = Clock()
     s = SessionStore(InMemoryCache(clock), ttl=60)
     assert await s.owner("abc") is None
-    assert await s.bind("abc", "learner-a", 100) == "learner-a"
-    assert await s.bind("abc", "learner-b", 100) == "learner-a"
+    assert await s.bind("abc", "learner-a") == "learner-a"
+    assert await s.bind("abc", "learner-b") == "learner-a"
     assert await s.owner("abc") == "learner-a"
-    clock.now = 101
+    clock.now = 59
+    assert await s.owner("abc") == "learner-a"
+    clock.now = 61
     assert await s.owner("abc") is None

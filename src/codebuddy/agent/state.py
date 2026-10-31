@@ -27,6 +27,7 @@ class TutorState(TypedDict, total=False):
     language: str
     learner_id: str | None
     # working state
+    foreign: bool  # the session is bound to another learner: leave its history alone
     progress: SessionProgress
     features: CodeFeatures
     cache_key: str | None

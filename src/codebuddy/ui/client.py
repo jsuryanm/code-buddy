@@ -27,11 +27,17 @@ def parse_sse(lines: Iterable[str]) -> Iterator[tuple[str, dict]]:
 
 
 class ApiError(Exception):
-    """A failed API call. `status` is the HTTP status, or None when the API was unreachable."""
+    """A failed API call. `status` is the HTTP status, or None when there was no HTTP status.
 
-    def __init__(self, message: str, status: int | None = None):
+    `reached` is False only when the request never got to the server (it could not connect).
+    A stream that breaks after a 200 has no status but did reach it. Defaults to `status`
+    being set.
+    """
+
+    def __init__(self, message: str, status: int | None = None, reached: bool | None = None):
         super().__init__(message)
         self.status = status
+        self.reached = status is not None if reached is None else reached
 
 
 class TutorClient:
@@ -57,7 +63,10 @@ class TutorClient:
                     )
                 yield from parse_sse(resp.iter_lines())
         except httpx.HTTPError as exc:
-            raise ApiError(f"Cannot reach the API at {self._http.base_url}: {exc}") from exc
+            reached = not isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout)
+            raise ApiError(
+                f"Cannot reach the API at {self._http.base_url}: {exc}", reached=reached
+            ) from exc
 
     def stream_turn(
         self,

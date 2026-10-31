@@ -15,6 +15,7 @@ writes that were scheduled or waiting for the lock when the learner asked to be 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -25,6 +26,8 @@ from codebuddy.config import Settings
 from codebuddy.memory.types import Episode, MemoryItem, MemoryKind
 
 os.environ.setdefault("MEM0_TELEMETRY", "False")  # read once when mem0 is first imported
+
+log = logging.getLogger("codebuddy.memory")
 
 AGENT_ID = "codebuddy-tutor"
 COLLECTION = "codebuddy_memory"
@@ -163,7 +166,13 @@ class Mem0LearnerMemory:
         def delete() -> int:
             self._epochs[learner_id] = self._epochs.get(learner_id, 0) + 1
             count = 0
+            seen: list[str] = []
             while batch := self._get_all(learner_id):
+                ids = [row["id"] for row in batch]
+                if ids == seen:  # deletes removed nothing; stop and let the sweep run
+                    log.warning("Forget: a batch came back unchanged after deletes; sweeping")
+                    break
+                seen = ids
                 for row in batch:
                     self._mem().delete(row["id"])
                 count += len(batch)

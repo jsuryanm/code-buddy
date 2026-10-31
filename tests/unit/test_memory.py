@@ -154,6 +154,22 @@ async def test_mem0_forget_counts_every_item_past_the_list_limit():
     assert [c[0] for c in stub.calls if c[0] != "delete"] == ["get_all"] * 4 + ["delete_all"]
 
 
+class StuckMem0(StubMem0):
+    """`delete` records the call but removes nothing, so `get_all` keeps returning the rows."""
+
+    def delete(self, memory_id):
+        self.calls.append(("delete", memory_id))
+
+
+async def test_mem0_forget_stops_when_delete_removes_nothing(caplog):
+    stub = StuckMem0(results={"results": ROWS})
+    with caplog.at_level("WARNING", logger="codebuddy.memory"):
+        await Mem0LearnerMemory(Settings(), memory=stub).forget("learner-x")
+    assert [c[0] for c in stub.calls if c[0] != "delete"] == ["get_all", "get_all", "delete_all"]
+    assert stub.calls[-1] == ("delete_all", {"user_id": "learner-x"})
+    assert caplog.records and "learner-x" not in caplog.text
+
+
 class StoringMem0(StubMem0):
     """Keeps added rows per user and fails if two calls ever run at once."""
 

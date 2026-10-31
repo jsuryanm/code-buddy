@@ -233,11 +233,11 @@ def test_remember_my_choice_survives_switching_chats():
     assert stub.approvals == [("t1", True, False)]
 
 
-def failed_approval(status) -> tuple[Stub, AppTest]:
+def failed_approval(status, reached=None) -> tuple[Stub, AppTest]:
     stub = Stub()
 
     def boom(*a, **k):
-        raise ApiError(f"API returned {status}", status=status)
+        raise ApiError(f"API returned {status}", status=status, reached=reached)
 
     stub.stream_approve = boom
     at = make_app(stub)
@@ -260,6 +260,35 @@ def test_an_expired_approval_says_so_and_drops_the_prompt():
     assert chat(at)["pending"] is None
     assert not [b for b in at.button if b.key in ("approve_run", "decline_run")]
     assert "That request expired. Send your message again." in [i.value for i in at.info]
+
+
+def test_a_rate_limited_approval_keeps_the_prompt():
+    _, at = failed_approval(429)
+    assert not at.exception
+    assert chat(at)["pending"]["turn_id"] == "t1"
+    assert at.button(key="approve_run") is not None
+    assert "Too many requests. Wait a minute and try again." in [i.value for i in at.info]
+
+
+def test_an_approval_dropped_after_the_server_took_it_drops_the_prompt():
+    _, at = failed_approval(None, reached=True)
+    assert not at.exception
+    assert chat(at)["pending"] is None
+    assert not [b for b in at.button if b.key in ("approve_run", "decline_run")]
+    assert "That request expired. Send your message again." in [i.value for i in at.info]
+
+
+def test_a_404_on_a_normal_turn_shows_the_generic_sentence():
+    stub = Stub()
+
+    def gone(*a, **k):
+        raise ApiError("API returned 404", status=404)
+
+    stub.stream_turn = gone
+    at = make_app(stub)
+    at.chat_input[0].set_value("hello").run()
+    assert not at.exception
+    assert [e.value for e in at.error] == ["Something went wrong. Please try again."]
 
 
 def test_chat_input_accepts_audio_only_when_voice_is_configured():

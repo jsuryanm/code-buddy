@@ -276,6 +276,24 @@ async def test_graph_skips_memory_for_a_learner_the_session_is_not_bound_to(make
     assert snapshot["memory_recalls"] == 1 and snapshot["memory_writes"] == writes
 
 
+async def test_a_turn_without_a_learner_leaves_the_bound_learners_history_alone(make_harness):
+    model = ScriptedChat(["Q?", "Q?"])
+    memory = InMemoryLearnerMemory()
+    h = make_harness(standard=model, memory=memory)
+    h.deps.settings = h.deps.settings.model_copy(update={"memory_write_every": 1})
+    await h.turn("why is my loop wrong", code=BUGGY, learner_id=LEARNER)  # binds the session
+    await drain(h)
+    before = (await h.deps.sessions.load("s1")).history
+    writes = (await h.deps.metrics.snapshot())["memory_writes"]
+    out = await h.turn("what is a list", code=BUGGY)  # lost the race with the API check
+    await drain(h)
+    assert out["state"].get("learner_id") is None
+    assert "why is my loop wrong" not in prompt_of(model)  # the owner's turns are not shown
+    progress = await h.deps.sessions.load("s1")
+    assert progress.learner_id == LEARNER and progress.history == before
+    assert (await h.deps.metrics.snapshot())["memory_writes"] == writes
+
+
 async def test_a_session_used_without_memory_binds_once(make_harness):
     h = make_harness(memory=InMemoryLearnerMemory())
     async with client_for(h) as client:
@@ -332,7 +350,7 @@ async def test_a_bind_key_alone_refuses_other_learners(make_harness):
     h = make_harness(memory=InMemoryLearnerMemory())
     async with client_for(h) as client:
         a, b = await new_token(client), await new_token(client)
-        await h.deps.sessions.bind("s1", a.split(".")[0], 600)  # first turn still running
+        await h.deps.sessions.bind("s1", a.split(".")[0])  # first turn still running
         body = {"session_id": "s1", "message": "what is a loop"}
         for extra in ({"learner_id": b}, {}):
             r = await client.post("/v1/turn", json={**body, **extra})

@@ -36,7 +36,6 @@ ERRORS = {
     None: "Can't reach the tutor. Check that it is running.",
     401: "The tutor needs an API key. Set CODEBUDDY_API_KEY and restart the page.",
     403: "Your saved profile is no longer valid. Turn memory off and on again.",
-    404: "That request expired. Send your message again.",
     409: "This chat belongs to another memory setting, so a new chat was started. "
     "Send your message again.",
     429: "Too many requests. Wait a minute and try again.",
@@ -47,6 +46,7 @@ VOICE_ERRORS = {
     502: "Couldn't understand the recording.",
 }
 MEMORY_ERRORS = {503: "Memory is turned off on the server."}
+APPROVAL_ERRORS = {404: "That request expired. Send your message again."}
 GENERIC_ERROR = "Something went wrong. Please try again."
 
 
@@ -631,11 +631,17 @@ def main() -> None:
             chat, None, lambda: client.stream_approve(session_id, turn_id, approve, remember)
         )
         if failed is not None:
-            # Unreachable or rate-limited: the server never took the request, so ask again.
-            # Anything else (404: already taken or expired) drops the prompt.
-            if failed.status in (None, 429):
+            # Ask again only when the server never took the request: it could not be reached,
+            # or it refused with 429. Anything else drops the prompt: a 404 means the turn was
+            # already taken or expired, and a stream that broke after a 200 has used it up.
+            if failed.status == 429 or not failed.reached:
                 chat["pending"] = pending
-            st.session_state["turn_note"] = error_text(failed)
+                note = error_text(failed)
+            elif failed.status is None:
+                note = APPROVAL_ERRORS[404]
+            else:
+                note = error_text(failed, APPROVAL_ERRORS)
+            st.session_state["turn_note"] = note
             st.rerun()  # redraw so the prompt shows only if it was kept
     elif show_clicked:
         run_turn(

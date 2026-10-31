@@ -90,7 +90,7 @@ flowchart LR
 
 | Node | What it does | File |
 |---|---|---|
-| `load_state` | Loads `SessionProgress` from the session cache, trims input, counts identical resubmissions, binds the session to the verified learner (or drops the learner id if the session belongs to another) | `agent/nodes.py` |
+| `load_state` | Loads `SessionProgress` from the session cache, trims input, counts identical resubmissions, binds the session to the verified learner (or, if the session belongs to another learner, drops the learner id and keeps the turn out of that learner's history) | `agent/nodes.py` |
 | `analyze_code` | Parses Python with `ast`, records bug patterns and syntax errors | `agent/code_analysis.py` |
 | `check_cache` | L1 exact lookup when no code is attached; optional L2 semantic lookup; on a miss takes a single-flight lock so duplicate concurrent questions generate once. Skipped entirely for a learner with memory active | `agent/nodes.py` |
 | `emit_cached` | Streams the cached answer; skips every model call | `agent/nodes.py` |
