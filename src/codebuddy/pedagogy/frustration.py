@@ -18,9 +18,10 @@ _GIVE_UP = re.compile(
     re.IGNORECASE,
 )
 
-# During a quiz: "stop/skip the quiz" ends it, a plain "skip" moves to the next question.
-_STOP_QUIZ = re.compile(r"\b(stop|end|quit|exit|skip|leave) (the |this )?quiz\b", re.IGNORECASE)
-_SKIP_QUESTION = re.compile(r"\bskip\b", re.IGNORECASE)
+# During a quiz: "stop/skip the quiz" ends it, a plain "skip" moves to the next question. Only
+# a message that is nothing but the request counts, so "should I skip the i + 1?" is an answer.
+_STOP_QUIZ = re.compile(r"^\s*(stop|end|quit|exit|skip|leave)( the| this)? quiz\W*$", re.IGNORECASE)
+_SKIP_QUESTION = re.compile(r"^\s*skip( this)?( question)?\W*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

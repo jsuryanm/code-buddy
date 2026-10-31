@@ -24,7 +24,7 @@ from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
 from codebuddy.memory.types import Episode
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
-from codebuddy.pedagogy.policy import decide_mode, fixed_it
+from codebuddy.pedagogy.policy import decide_mode, fixed_it, shape
 from codebuddy.pedagogy.quiz import advance, quiz_meta
 from codebuddy.pedagogy.templates import fallback_text, system_prompt, user_prompt
 from codebuddy.rag.query import build_query, rrf_merge
@@ -308,9 +308,7 @@ class TutorNodes:
             else:
                 decision = Decision(mode=Mode.QUIZ, reasons=["quiz: graded"])
         else:
-            fixed = fixed_it(
-                progress, features, bool(state.get("code_changed")), state.get("runtime")
-            )
+            fixed = fixed_it(progress, features, bool(state.get("code_changed")))
             decision = decide_mode(
                 state["classification"].intent,
                 progress,
@@ -609,6 +607,9 @@ class TutorNodes:
             and not state.get("quiz_turn")
         ):
             progress.last_patterns = features.patterns  # what the next fix is judged against
+            progress.last_shape = shape(features) if features.patterns else None
+        if decision.mode is Mode.REVEAL:  # pasting the revealed solution is not a fix
+            progress.last_patterns, progress.last_shape = [], None
 
         at = str(self.d.clock())  # lets a later write skip turns from before Forget me
         if not state.get("foreign"):

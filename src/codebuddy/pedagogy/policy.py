@@ -12,24 +12,32 @@ from codebuddy.schemas import Decision, HintLevel, Intent, Mode, SessionProgress
 _LAST_HINT = HintLevel.SCAFFOLD
 
 
-def fixed_it(
-    progress: SessionProgress,
-    features: CodeFeatures | None,
-    code_changed: bool,
-    runtime: dict | None = None,
-) -> bool:
+FIX_KEEPS = 0.6  # a fix keeps at least this share of the statements the buggy code had
+
+
+def shape(features: CodeFeatures) -> dict:
+    """Fingerprint of code for fix detection: function names and statement count, never text."""
+    return {"functions": sorted(set(features.functions)), "statements": features.statements}
+
+
+def fixed_it(progress: SessionProgress, features: CodeFeatures | None, code_changed: bool) -> bool:
     """The learner fixed the bug, judged from their code alone, never from what they say.
 
     True when the last code they sent had bug patterns, this code is different, it parses,
-    none of those patterns remain, and a trace that ran this turn (if any) did not fail.
+    none of those patterns remain, and it is still the same program: the functions it had are
+    all there and it keeps at least 60% of its statements (deleting the code is not a fix).
     """
     if not (progress.last_patterns and code_changed and features) or features.parse_error:
         return False
     if any(p in features.patterns for p in progress.last_patterns):
         return False
-    if runtime and runtime.get("ran"):
-        return not (runtime.get("error") or runtime.get("timed_out"))
-    return True
+    before = progress.last_shape
+    if not before:
+        return False
+    return (
+        set(before["functions"]) <= set(features.functions)
+        and features.statements >= FIX_KEEPS * before["statements"]
+    )
 
 
 def decide_mode(

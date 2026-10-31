@@ -75,6 +75,8 @@ class SessionProgress(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)  # last few turns, truncated
     learner_id: str | None = None  # bound on first use with memory; one learner per session
     last_patterns: list[str] = Field(default_factory=list)  # bug patterns in the last code sent
+    # Fingerprint of that buggy code (policy.shape: function names, statement count; no text).
+    last_shape: dict | None = None
     quiz_offer: str = ""  # pattern id of the last fixed bug: what a quiz would be about
     # Active quiz: {"pattern", "index" (0 to 4), "score", "results": [bool], "tries"}.
     quiz: dict | None = None

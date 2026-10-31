@@ -95,6 +95,7 @@ class CodeFeatures:
     loops: int = 0
     functions: list[str] = field(default_factory=list)
     calls: list[str] = field(default_factory=list)  # built-ins and container methods called
+    statements: int = 0  # statements other than `pass` and bare constants (docstrings, `...`)
 
 
 def analyze(code: str | None) -> CodeFeatures:
@@ -108,6 +109,8 @@ def analyze(code: str | None) -> CodeFeatures:
     feats = CodeFeatures()
     found: set[str] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.stmt) and not _trivial(node):
+            feats.statements += 1
         if isinstance(node, ast.Call):
             _note_call(node, feats.calls)
         if isinstance(node, ast.For | ast.While):
@@ -129,6 +132,12 @@ def analyze(code: str | None) -> CodeFeatures:
         found.add("uninitialized_accumulator")
     feats.patterns = sorted(found)
     return feats
+
+
+def _trivial(stmt: ast.stmt) -> bool:
+    return isinstance(stmt, ast.Pass) or (
+        isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+    )
 
 
 def _note_call(node: ast.Call, calls: list[str]) -> None:
@@ -171,12 +180,26 @@ def _mutates_iterable(node: ast.For) -> bool:
 
 
 def _is_recursive_without_guard(fn: ast.FunctionDef) -> bool:
-    calls_self = any(
-        isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == fn.name
-        for n in ast.walk(fn)
+    def calls_self(node: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == fn.name
+            for n in ast.walk(node)
+        )
+
+    def stops(branch: list[ast.stmt]) -> bool:
+        """A `return` in this branch that does not call the function again."""
+        return any(
+            isinstance(n, ast.Return) and not (n.value and calls_self(n.value))
+            for stmt in branch
+            for n in ast.walk(stmt)
+        )
+
+    # Only an `if` with a branch that returns without recursing counts as a base case, so
+    # `if False: pass` does not hide the bug.
+    has_base_case = any(
+        isinstance(n, ast.If) and (stops(n.body) or stops(n.orelse)) for n in ast.walk(fn)
     )
-    has_guard = any(isinstance(n, ast.If) for n in ast.walk(fn))
-    return calls_self and not has_guard
+    return calls_self(fn) and not has_base_case
 
 
 def _uninitialized_accumulator(tree: ast.AST) -> bool:

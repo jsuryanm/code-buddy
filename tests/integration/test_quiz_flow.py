@@ -60,6 +60,23 @@ async def test_a_syntax_error_in_between_does_not_hide_the_fix(make_harness):
     assert (await h.turn("how about now", code=FIXED))["meta"]["mode"] == "confirm"
 
 
+async def test_pasting_the_revealed_solution_is_not_praised_as_a_fix(make_harness):
+    h = make_harness(standard=ScriptedChat(["Q?", "Q?"]), heavy=ScriptedChat(["Fixed code."]))
+    await h.turn("my sum crashes", code=BUGGY)
+    out = await h.turn("show me the answer", code=BUGGY)
+    assert out["meta"]["mode"] == "reveal"
+    progress = out["state"]["progress"]
+    assert progress.last_patterns == [] and progress.last_shape is None
+    assert (await h.turn("like this?", code=FIXED))["meta"]["mode"] == "hint"
+
+
+@pytest.mark.parametrize("code", ["# nothing\n", "pass\n", "print(1)\n"])
+async def test_deleting_or_replacing_the_code_is_not_a_fix(make_harness, code):
+    h = make_harness(standard=ScriptedChat(["Q?", "Q?"]))
+    await h.turn("my sum crashes", code=BUGGY)
+    assert (await h.turn("fixed?", code=code))["meta"]["mode"] == "hint"
+
+
 # -- the quiz over HTTP ------------------------------------------------------------------
 
 
@@ -156,7 +173,7 @@ async def test_unchanged_question_code_gets_a_nudge_without_a_model_call(quiz_cl
     client, h = quiz_client(standard=model)
     async with client:
         await fix_then_quiz(client)
-        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet, "is this it?")).text)
+        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet, "done")).text)
     assert text == NUDGE and meta["mode"] == "quiz" and len(model.calls) == 2
     quiz = (await h.deps.sessions.load("q")).quiz
     assert quiz["index"] == 0 and quiz["tries"] == 0 and quiz["results"] == []

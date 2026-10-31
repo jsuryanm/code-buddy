@@ -38,3 +38,27 @@ def test_syntax_error_is_reported_not_raised():
 
 def test_empty_code():
     assert analyze(None).patterns == [] and analyze("  ").parse_error is None
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "def f(n):\n    if False:\n        pass\n    return f(n - 1)\n",
+        "def f(n):\n    if n > 0:\n        return f(n - 1)\n    return f(n + 1)\n",
+        "def f(n):\n    if n:\n        print(n)\n    f(n - 1)\n",
+    ],
+)
+def test_an_if_without_a_stopping_return_is_not_a_base_case(code):
+    assert "missing_base_case" in analyze(code).patterns
+
+
+def test_a_base_case_in_the_else_branch_counts():
+    code = "def f(n):\n    if n > 0:\n        return f(n - 1)\n    else:\n        return 0\n"
+    assert "missing_base_case" not in analyze(code).patterns
+
+
+def test_statement_count_skips_pass_and_bare_constants():
+    assert analyze("# nothing\n").statements == 0
+    assert analyze("pass\n").statements == 0
+    assert analyze('def f():\n    """doc"""\n    ...\n').statements == 1  # just the def
+    assert analyze("x = 1\nfor i in range(3):\n    print(i)\n").statements == 3

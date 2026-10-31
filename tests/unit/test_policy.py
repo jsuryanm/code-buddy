@@ -3,7 +3,7 @@ import pytest
 from codebuddy.agent.code_analysis import analyze
 from codebuddy.config import Settings
 from codebuddy.pedagogy.frustration import Signals, asks_for_answer, detect_signals
-from codebuddy.pedagogy.policy import decide_mode, fixed_it
+from codebuddy.pedagogy.policy import decide_mode, fixed_it, shape
 from codebuddy.schemas import HintLevel, Intent, Mode, SessionProgress
 
 
@@ -97,29 +97,57 @@ BUGGY = "nums = [1, 2]\nfor i in range(len(nums) + 1):\n    print(nums[i])\n"
 FIXED = "nums = [1, 2]\nfor i in range(len(nums)):\n    print(nums[i])\n"
 
 
+SHAPE = shape(analyze(BUGGY))
+
+
 def test_fixed_when_the_pattern_is_gone_and_the_code_changed():
-    p = progress(last_patterns=["off_by_one_range"])
+    p = progress(last_patterns=["off_by_one_range"], last_shape=SHAPE)
     assert fixed_it(p, analyze(FIXED), code_changed=True)
-    assert fixed_it(p, analyze(FIXED), True, {"ran": True, "error": None, "timed_out": False})
+
+
+def test_shape_keeps_function_names_and_the_statement_count_never_the_code():
+    code = "def f(xs):\n    for i in range(len(xs) + 1):\n        print(xs[i])\n"
+    assert shape(analyze(code)) == {"functions": ["f"], "statements": 3}
 
 
 @pytest.mark.parametrize(
-    "last,code,changed,runtime",
+    "last,code,changed",
     [
-        (["off_by_one_range"], BUGGY, True, None),  # pattern still present
-        (["off_by_one_range"], FIXED, False, None),  # code unchanged
-        (["off_by_one_range"], "for i in range(3)\n    pass\n", True, None),  # parse error
-        ([], FIXED, True, None),  # nothing was wrong before
-        (["off_by_one_range"], FIXED, True, {"ran": True, "error": {"type": "IndexError"}}),
-        (["off_by_one_range"], FIXED, True, {"ran": True, "error": None, "timed_out": True}),
+        (["off_by_one_range"], BUGGY, True),  # pattern still present
+        (["off_by_one_range"], FIXED, False),  # code unchanged
+        (["off_by_one_range"], "for i in range(3)\n    pass\n", True),  # parse error
+        ([], FIXED, True),  # nothing was wrong before
+        (["off_by_one_range"], "# nothing\n", True),  # code deleted
+        (["off_by_one_range"], "pass\n", True),
+        (["off_by_one_range"], "print(1)\n", True),  # unrelated code
     ],
 )
-def test_not_fixed(last, code, changed, runtime):
-    assert not fixed_it(progress(last_patterns=last), analyze(code), changed, runtime)
+def test_not_fixed(last, code, changed):
+    p = progress(last_patterns=last, last_shape=SHAPE if last else None)
+    assert not fixed_it(p, analyze(code), changed)
+
+
+def test_a_fix_must_keep_the_functions_it_had():
+    before = "def show(nums):\n    for i in range(len(nums) + 1):\n        print(nums[i])\n"
+    after = "def other(nums):\n    for i in range(len(nums)):\n        print(nums[i])\n"
+    p = progress(last_patterns=["off_by_one_range"], last_shape=shape(analyze(before)))
+    assert not fixed_it(p, analyze(after), True)
+    assert fixed_it(p, analyze(after.replace("other", "show")), True)
+
+
+def test_no_fingerprint_means_no_fix():
+    assert not fixed_it(progress(last_patterns=["off_by_one_range"]), analyze(FIXED), True)
+
+
+@pytest.mark.xfail(strict=True, reason="analyze() does not flag nums[i + 1] in range(len(nums))")
+def test_moving_the_bug_to_the_index_is_not_a_fix():
+    moved = "nums = [1, 2]\nfor i in range(len(nums)):\n    print(nums[i + 1])\n"
+    p = progress(last_patterns=["off_by_one_range"], last_shape=SHAPE)
+    assert not fixed_it(p, analyze(moved), True)
 
 
 def test_saying_it_is_fixed_is_not_enough():
-    p = progress(last_patterns=["off_by_one_range"])
+    p = progress(last_patterns=["off_by_one_range"], last_shape=SHAPE)
     assert not fixed_it(p, analyze(None), code_changed=False)
 
 
