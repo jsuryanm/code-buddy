@@ -225,8 +225,8 @@ class TutorNodes:
                 self.d.memory.recall(learner_id, state["message"], s.memory_recall_limit),
                 timeout=s.memory_recall_timeout_s,
             )
-        except Exception:
-            log.warning("memory recall failed", exc_info=True)
+        except Exception as exc:  # no traceback: it can quote the learner id
+            log.warning("memory recall failed (%s)", type(exc).__name__)
             await self.d.metrics.incr("memory_failures")
             emit_step(writer, "recall_memory", "done")
             return {"memories": []}
@@ -487,8 +487,8 @@ class TutorNodes:
     ) -> None:
         try:
             await self.d.memory.remember(learner_id, history, episode, since=since)
-        except Exception:
-            log.warning("memory write failed", exc_info=True)
+        except Exception as exc:  # no traceback: it can quote the learner id
+            log.warning("memory write failed (%s)", type(exc).__name__)
             await self.d.metrics.incr("memory_failures")
         else:
             await self.d.metrics.incr("memory_writes")

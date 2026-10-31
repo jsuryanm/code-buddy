@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["streamlit"]
+ui = ["streamlit>=1.66,<2"]
 pdf = ["docling"]
 rerank = ["sentence-transformers"]
 

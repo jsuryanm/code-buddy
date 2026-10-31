@@ -346,6 +346,22 @@ async def test_shutdown_waits_for_background_writes(make_harness, monkeypatch, c
     assert "cancelled 1 background task(s)" in caplog.text
 
 
+async def test_shutdown_also_waits_for_judge_tasks(make_harness):
+    h = make_harness()
+    app = create_app(h.deps)
+    finished = []
+
+    async def slow_judge():
+        await asyncio.sleep(0.05)
+        finished.append(True)
+
+    async with app.router.lifespan_context(app):
+        task = asyncio.create_task(slow_judge())
+        app.state.background.add(task)
+        task.add_done_callback(app.state.background.discard)
+    assert finished == [True]
+
+
 class HeldWrites(InMemoryLearnerMemory):
     """Writes wait until released, so a test can Forget between scheduling and execution."""
 

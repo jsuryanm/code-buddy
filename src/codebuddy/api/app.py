@@ -55,11 +55,11 @@ def sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def drain_background(d: Deps) -> None:
+async def drain_background(tasks: set) -> None:
     """Let outstanding background tasks finish before resources close; cancel stragglers."""
-    if not d.background:
+    if not tasks:
         return
-    _, pending = await asyncio.wait(set(d.background), timeout=SHUTDOWN_DRAIN_S)
+    _, pending = await asyncio.wait(set(tasks), timeout=SHUTDOWN_DRAIN_S)
     for task in pending:
         task.cancel()
     if pending:
@@ -86,12 +86,12 @@ def create_app(
             try:
                 _install(app, res.deps, res.cache_kind, res.speech, res.judge, res.checkpointer)
                 yield
-                await drain_background(res.deps)
+                await drain_background(res.deps.background | app.state.background)
             finally:
                 await res.stack.aclose()
         else:
             yield
-            await drain_background(app.state.deps)
+            await drain_background(app.state.deps.background | app.state.background)
 
     app = FastAPI(title="CodeBuddy", version="0.2.0", lifespan=lifespan)
     app.state.background = set()  # keeps references to fire-and-forget tasks
