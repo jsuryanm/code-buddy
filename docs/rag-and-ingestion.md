@@ -58,7 +58,8 @@ Embedding uses `OpenAIEmbeddings` (needs `OPENAI_API_KEY`) plus BM25 sparse vect
    where it came from.
 6. Upsert with a deterministic ID (UUID derived from the SHA-256 of source plus chunk text).
    Re-ingesting identical text overwrites instead of duplicating.
-7. Record the file in `<QDRANT_PATH>/manifest.json` (title, corpus, licence, hash, chunk count, time).
+7. Record the file in `<QDRANT_PATH>/manifest.json` (title, corpus, licence, hash, chunk count,
+   time).
 
 ### Chunk metadata
 
@@ -72,7 +73,8 @@ Embedding uses `OpenAIEmbeddings` (needs `OPENAI_API_KEY`) plus BM25 sparse vect
 | `parent` | The whole section text (capped), kept for small-to-big context |
 | `version`, `updated_at`, `content_hash` | Index version, ingest time, chunk hash |
 
-Search filters use these fields, for example `retriever.retrieve(q, filters={"content_type": "exercise"})`.
+Search filters use these fields, for example `retriever.retrieve(q, filters={"content_type":
+"exercise"})`.
 
 ### Known limitations
 
@@ -104,7 +106,8 @@ The agent builds the query from the learner message plus the concept of each det
 
 ## Adding a corpus or document
 
-1. Put the file in `data/raw/` and add a row to [corpus-manifest.md](corpus-manifest.md) (licence first).
+1. Put the file in `data/raw/` and add a row to [corpus-manifest.md](corpus-manifest.md) (licence
+   first).
 2. Ingest it with the command above.
 3. For a new learner-facing corpus, add its name to `LEARNER_CORPORA` in `api/wiring.py`.
 4. Add a query to `eval/golden/retrieval.jsonl` for the new material and run the offline eval.

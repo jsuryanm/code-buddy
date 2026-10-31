@@ -83,7 +83,8 @@ whose SHA-256 has not changed are skipped, and changed files overwrite their own
 and licence notes are in [rag-and-ingestion.md](rag-and-ingestion.md).
 
 Check [../PROJECT_SPEC.md](../PROJECT_SPEC.md) Section 19.5 before ingesting: Think Python is
-licensed CC BY-NC 3.0 Unported (non-commercial, stated on page 4 of the PDF), and the PCDIT paper and page need the authors'
+licensed CC BY-NC 3.0 Unported (non-commercial, stated on page 4 of the PDF), and the PCDIT paper
+and page need the authors'
 permission before any learner-facing use.
 
 ## Turn on learner memory (optional)
@@ -113,7 +114,7 @@ model IDs are set. If `CODEBUDDY_API_URL` points elsewhere, set it before starti
 ## Verify the install
 
 ```bash
-uv run pytest -q                      # 247 tests, no network or keys needed
+uv run pytest -q                      # 262 tests, no network or keys needed
 uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 ```

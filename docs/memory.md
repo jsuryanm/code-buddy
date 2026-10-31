@@ -61,11 +61,13 @@ use `CODEBUDDY_EMBED_MODEL`.
 
 ## Opt-in and "Forget me"
 
-1. The checkbox **Remember me across sessions** (in the sidebar **Settings** popover) is always unchecked on a fresh page.
+1. The checkbox **Remember me across sessions** (in the sidebar **Settings** popover) is always
+   unchecked on a fresh page.
 2. Ticking it asks the server for a learner token (`POST /v1/memory/learners`). The UI keeps the
    token in the session and in the page URL as `?learner=<token>`, so a bookmark restores the
    profile later.
-3. Opening a page whose URL already has `?learner=` does not enable memory. The Settings popover says "This
+3. Opening a page whose URL already has `?learner=` does not enable memory. The Settings popover
+   says "This
    link contains a saved learner profile. Use it only if you created it." and waits for **Use
    this profile**. A link alone never turns memory on or sends the token.
 4. While memory is on, the expander **What I remember about you** lists every stored item by
@@ -157,6 +159,7 @@ without OpenAI. Nothing it stores survives a restart.
 
 ## Tests
 
-`tests/unit/test_memory.py`, `tests/unit/test_learner_tokens.py`, `tests/unit/test_wiring_memory.py`,
+`tests/unit/test_memory.py`, `tests/unit/test_learner_tokens.py`,
+`tests/unit/test_wiring_memory.py`,
 `tests/integration/test_memory.py`, and `tests/integration/test_ui_memory.py`, all offline against
 `InMemoryLearnerMemory` or a recording stub in place of mem0. See [testing.md](testing.md).

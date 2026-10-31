@@ -27,7 +27,8 @@ Hint ladder:
 | 3 | `SCAFFOLD` | Pseudo-code plan or a worked example on a different problem | No (pseudo-code fences allowed) |
 | 4 | `REVEAL` | Full solution, why it failed (max 120 words), transfer question | Yes |
 
-At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private analysis
+At levels 0 and 1 the prompt (`EARLY_HINT_RULE` in `pedagogy/templates.py`) says the private
+analysis
 and runtime facts are only for choosing the question. The model must never state the error type, its
 cause, or the failing input; it asks the learner to run or trace a specific small input and say what
 they observe. The guard cannot catch this in prose, so it is a prompt rule, and `PROMPT_VERSION`
@@ -116,7 +117,8 @@ analysis" so it can choose a good question; they are not shown to the learner di
 | `shadowed_builtin` | names and scope | assigning to `list`, `sum`, `max`, `len`, and similar names |
 
 A syntax error is reported as a finding with its line number. To add a pattern, add a
-`BugPattern` entry to `PATTERNS`, a detector in `analyze()`, a case in `tests/unit/test_code_analysis.py`,
+`BugPattern` entry to `PATTERNS`, a detector in `analyze()`, a case in
+`tests/unit/test_code_analysis.py`,
 and a row in `eval/golden/cases.jsonl`.
 
 ## Tools and the policy

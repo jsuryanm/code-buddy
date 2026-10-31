@@ -26,16 +26,20 @@ target design. These docs describe what is built today (slice 1) and say where t
 
 ## Status
 
-Built and tested offline (247 tests, offline eval passing):
+Built and tested offline (262 tests, offline eval passing):
 
 - Pedagogy policy, hint ladder, streaming leak guard, optional sampled LLM judge
 - Static analysis of learner Python (five bug patterns)
-- Cache layers L1 (answers), optional L2 (semantic), L3 (embeddings), L4 (retrieval), L6 (session) on Upstash Redis or memory
+- Cache layers L1 (answers), optional L2 (semantic), L3 (embeddings), L4 (retrieval), L6 (session)
+  on Upstash Redis or memory
 - RAG ingestion and hybrid retrieval on Qdrant; query rewriting for short follow-ups
 - LangGraph tutor agent with durable checkpoints, FastAPI streaming API, Streamlit UI
-- Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, voice recording in the chat input with an editable transcript
-- MCP tool server (analysis, concrete-case suggestions, sandboxed tracing) and a learner approval step before any code runs
-- Opt-in long-term learner memory on mem0 (semantic, episodic, procedural notes), signed learner tokens, "Forget me" ([memory.md](memory.md))
+- Voice input: Groq Whisper (optional OpenAI fallback) behind `/v1/stt`, voice recording in the chat
+  input with an editable transcript
+- MCP tool server (analysis, concrete-case suggestions, sandboxed tracing) and a learner approval
+  step before any code runs
+- Opt-in long-term learner memory on mem0 (semantic, episodic, procedural notes), signed learner
+  tokens, "Forget me" ([memory.md](memory.md))
 - A `SandboxBackend` seam for code execution (only the local backend is included)
 - API keys, rate limiting, CORS, counters at `/v1/metrics`
 - Dockerfile, compose file, and CI workflow (written, not run)
@@ -50,6 +54,7 @@ Run once for real: PDF ingestion with Docling and OpenAI embeddings, on the two 
 corpus manifest.
 
 Not yet exercised against real services: OpenAI chat replies, mem0 memory extraction, Groq
-Whisper, Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files. The code follows each
+Whisper, Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files.
+The code follows each
 library's documentation and is covered by fakes and, for MCP and the sandbox, by real
 subprocesses, but treat the first live run as a test.

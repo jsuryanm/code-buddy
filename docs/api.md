@@ -41,7 +41,8 @@ choice; sessions expire after 2 hours without activity (`TTL_SESSION`).
 It is checked before the stream starts and ignored when memory is off. A malformed token returns
 422; a well-formed token that is not valid for this server, secret, and API key returns 403
 (`Invalid learner token`); a session already bound to a different learner, or a request without
-`learner_id` on a bound session, returns 409 (`This session belongs to another learner`). `POST /v1/show-answer` takes the same field and errors.
+`learner_id` on a bound session, returns 409 (`This session belongs to another learner`). `POST
+/v1/show-answer` takes the same field and errors.
 
 ### `POST /v1/approve`
 

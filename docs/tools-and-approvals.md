@@ -37,7 +37,8 @@ sequenceDiagram
   with `tools/policy.decide_permission()`: `ask` pauses the graph, `allow` runs, `deny` skips.
 - `approve_run` calls LangGraph's `interrupt()`. On resume it records the answer. With
   `remember: true` (the UI default) approving sets the permission to `allow` and declining sets it
-  to `deny` for the rest of the session. With `remember: false` the learner is asked again next time.
+  to `deny` for the rest of the session. With `remember: false` the learner is asked again next
+  time.
 - Nothing is generated and nothing is run before the decision. A paused turn is held in the
   checkpoint database (SQLite file in production, memory in tests).
 - Only the session that owns a paused turn can answer it, and each approval works once
@@ -59,7 +60,8 @@ always resolves to "skip", so a future write tool cannot run by accident.
 2. **Restricted builtins** inside the child process: a short list of safe functions, and an
    `__import__` that only allows the three modules.
 3. **Resource limits**: CPU seconds, address space (default 256 MB), no file writes, recursion
-   limit 150, output capped at 4000 characters, wall-clock timeout (default 3 s, then the process is killed).
+   limit 150, output capped at 4000 characters, wall-clock timeout (default 3 s, then the process is
+   killed).
 4. **Clean process**: `python -I -S`, empty environment, throwaway working directory.
 5. **No network** when the host allows `unshare -rn` (probed once; `/healthz` reports
    `sandbox_network_isolated`). Otherwise this layer is skipped.
@@ -104,13 +106,17 @@ uv run python -m codebuddy.mcp_server     # speaks MCP on stdin/stdout
 ```
 
 In the API, `tools/runner.MCPToolRunner` starts that server once as a subprocess, keeps one
-session open for the life of the app through `langchain.mcp` (`MCPAdapter`), and closes it on shutdown.
-`CODEBUDDY_MCP_ENABLED=false` calls the same functions in-process (`LocalToolRunner`), and `CODEBUDDY_TOOLS_ENABLED=false` turns tool use off entirely. If the MCP
+session open for the life of the app through `langchain.mcp` (`MCPAdapter`), and closes it on
+shutdown.
+`CODEBUDDY_MCP_ENABLED=false` calls the same functions in-process (`LocalToolRunner`), and
+`CODEBUDDY_TOOLS_ENABLED=false` turns tool use off entirely. If the MCP
 server fails to start the API logs a warning and falls back to in-process calls.
 `tests/unit/test_tools.py` starts a real MCP server and calls two tools through it.
 
-`langchain.mcp` is a beta API. `pyproject.toml` bounds it (`langchain[mcp]>=1.4,<1.5`, `mcp>=2.3,<3`) and
-the runner silences its beta warning. The server is `mcp.server.mcpserver.MCPServer` (mcp 2.x moved it
+`langchain.mcp` is a beta API. `pyproject.toml` bounds it (`langchain[mcp]>=1.4,<1.5`,
+`mcp>=2.3,<3`) and
+the runner silences its beta warning. The server is `mcp.server.mcpserver.MCPServer` (mcp 2.x moved
+it
 from `mcp.server.fastmcp`).
 
 To add a tool: write the function in `tools/functions.py` and add it to `TOOLS`; register it in
