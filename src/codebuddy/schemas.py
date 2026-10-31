@@ -45,6 +45,8 @@ class Mode(StrEnum):
     EXPLAIN = "explain"  # direct concept explanation (no learner bug involved)
     REVEAL = "reveal"
     REDIRECT = "redirect"  # off topic
+    CONFIRM = "confirm"  # the learner fixed the bug: confirm it and offer a quiz
+    QUIZ = "quiz"  # a quiz question, grade, or summary written by code (no model call)
 
 
 class Decision(BaseModel):
@@ -52,6 +54,9 @@ class Decision(BaseModel):
     level: HintLevel | None = None
     offer_answer: bool = False  # tutor ends the reply by offering the full answer
     can_show_answer: bool = False  # UI enables the Show-answer button
+    offer_quiz: bool = False  # UI shows the Try-a-quiz button (after a fix is detected)
+    quiz_concept: str | None = None  # concept name of the fixed bug, never the pattern id
+    quiz: dict | None = None  # {"index", "total", "difficulty", "score"} while a quiz runs
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -69,6 +74,10 @@ class SessionProgress(BaseModel):
     run_permission: str = "ask"  # learner's choice for running their code: ask, allow, deny
     history: list[dict[str, str]] = Field(default_factory=list)  # last few turns, truncated
     learner_id: str | None = None  # bound on first use with memory; one learner per session
+    last_patterns: list[str] = Field(default_factory=list)  # bug patterns in the last code sent
+    quiz_offer: str = ""  # pattern id of the last fixed bug: what a quiz would be about
+    # Active quiz: {"pattern", "index" (0 to 4), "score", "results": [bool], "tries"}.
+    quiz: dict | None = None
 
 
 class Citation(BaseModel):
@@ -89,6 +98,11 @@ class ShowAnswerRequest(BaseModel):
     session_id: str
     code: str | None = None
     language: str = "python"
+    learner_id: str | None = Field(default=None, pattern=LEARNER_TOKEN)
+
+
+class QuizRequest(BaseModel):
+    session_id: str
     learner_id: str | None = Field(default=None, pattern=LEARNER_TOKEN)
 
 

@@ -93,6 +93,14 @@ class TutorClient:
             payload["learner_id"] = learner_id
         return self._stream("/v1/show-answer", payload)
 
+    def stream_quiz(
+        self, session_id: str, learner_id: str | None = None
+    ) -> Iterator[tuple[str, dict]]:
+        payload = {"session_id": session_id}
+        if learner_id:
+            payload["learner_id"] = learner_id
+        return self._stream("/v1/quiz", payload)
+
     def _memory_call(self, method: str, path: str, learner_token: str | None = None) -> dict:
         headers = {"X-Learner-Token": learner_token} if learner_token else {}
         try:

@@ -24,7 +24,8 @@ from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
 from codebuddy.memory.types import Episode
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
-from codebuddy.pedagogy.policy import decide_mode
+from codebuddy.pedagogy.policy import decide_mode, fixed_it
+from codebuddy.pedagogy.quiz import advance, quiz_meta
 from codebuddy.pedagogy.templates import fallback_text, system_prompt, user_prompt
 from codebuddy.rag.query import build_query, rrf_merge
 from codebuddy.rag.retrieve import RetrievalResult
@@ -45,6 +46,10 @@ def _text(chunk) -> str:
     if isinstance(content, str):
         return content
     return "".join(p.get("text", "") for p in content if isinstance(p, dict))
+
+
+def submission_hash(code: str) -> str:
+    return hashlib.sha1(keys.normalize(code).encode()).hexdigest()
 
 
 def runtime_findings(runtime: dict | None, cases: list[dict]) -> list[str]:
@@ -83,14 +88,21 @@ class TutorNodes:
         progress = await self.d.sessions.load(state["session_id"])
         message = state["message"].strip()[:MAX_MESSAGE]
         code = (state.get("code") or "").strip()[:MAX_CODE]
+        changed = False
         if code:
-            digest = hashlib.sha1(keys.normalize(code).encode()).hexdigest()
+            digest = submission_hash(code)
             if digest == progress.last_submission_hash:
                 progress.repeated_submissions += 1
             else:
+                changed = True
                 progress.repeated_submissions = 0
                 progress.last_submission_hash = digest
-        update = {"progress": progress, "message": message, "code": code or None}
+        update = {
+            "progress": progress,
+            "message": message,
+            "code": code or None,
+            "code_changed": changed,
+        }
         learner_id = state.get("learner_id")
         if learner_id and progress.learner_id is None:
             progress.learner_id = learner_id  # the API refuses other learners from now on
@@ -125,7 +137,7 @@ class TutorNodes:
 
     async def check_cache(self, state: TutorState) -> dict:
         """L1 (exact) then optional L2 (semantic). Only concept answers without code are stored."""
-        if state.get("code"):
+        if state.get("code") or state["progress"].quiz:  # a quiz turn is graded, never cached
             return {"cache_key": None}
         if self.d.memory and state.get("learner_id"):
             return {"cache_key": None}  # personalized answers must not be shared or stored
@@ -273,16 +285,39 @@ class TutorNodes:
         progress = state["progress"]
         writer = get_stream_writer()
         emit_step(writer, "policy", "running")
-        decision = decide_mode(
-            state["classification"].intent,
-            progress,
-            detect_signals(state["message"], progress),
-            self.d.clock(),
-            max_turns=s.ladder_max_turns,
-            max_seconds=s.ladder_max_seconds,
-        )
+        features = state.get("features")
+        update: dict = {"progress": progress}
+        step = None
+        if progress.quiz is not None:
+            step = advance(progress.quiz, state["message"], features, bool(state.get("code")))
+        if step is not None:
+            # A quiz answer: graded by code. Only a first wrong try reaches the model, as one
+            # guarded level-0 hint; everything else is written by code (pedagogy/quiz.py).
+            progress.quiz = step.quiz
+            update |= {"quiz_turn": True, "scripted": step.text, "quiz_code": step.code}
+            if step.text is None:
+                decision = Decision(
+                    mode=Mode.HINT, level=HintLevel.DIAGNOSE, reasons=["quiz: one hint"]
+                )
+            else:
+                decision = Decision(mode=Mode.QUIZ, reasons=["quiz: graded"])
+        else:
+            fixed = fixed_it(
+                progress, features, bool(state.get("code_changed")), state.get("runtime")
+            )
+            decision = decide_mode(
+                state["classification"].intent,
+                progress,
+                detect_signals(state["message"], progress, fixed=fixed),
+                self.d.clock(),
+                max_turns=s.ladder_max_turns,
+                max_seconds=s.ladder_max_seconds,
+            )
+        if progress.quiz is not None:
+            decision.quiz, decision.can_show_answer = quiz_meta(progress.quiz), False
         emit_step(writer, "policy", "done", self._decision_detail(decision))
-        return {"decision": decision, "tool_plan": self._plan_tools(state, decision)}
+        update |= {"decision": decision, "tool_plan": self._plan_tools(state, decision)}
+        return update
 
     @staticmethod
     def _decision_detail(decision: Decision) -> str:
@@ -292,6 +327,8 @@ class TutorNodes:
             Mode.EXPLAIN: "Explanation",
             Mode.REVEAL: "Full answer",
             Mode.REDIRECT: "Staying on programming",
+            Mode.CONFIRM: "You fixed it",
+            Mode.QUIZ: "Quiz",
         }.get(decision.mode, "")
 
     # -- tools and human approval ----------------------------------------------------
@@ -301,8 +338,8 @@ class TutorNodes:
         features = state.get("features")
         if not (self.d.tools and state.get("code") and features and not features.parse_error):
             return []
-        if state.get("language", "python") != "python":
-            return []
+        if state.get("language", "python") != "python" or state["progress"].quiz is not None:
+            return []  # nothing runs during a quiz
         intent = state["classification"].intent
         if intent is Intent.DEBUG_HELP and decision.mode is Mode.HINT:
             return ["trace_python"]
@@ -381,13 +418,16 @@ class TutorNodes:
         s = self.d.settings
         return {
             Mode.HINT: s.max_tokens_hint,
+            Mode.CONFIRM: s.max_tokens_hint,
             Mode.EXPLAIN: s.max_tokens_explain,
             Mode.REVEAL: s.max_tokens_reveal,
             Mode.REDIRECT: s.max_tokens_redirect,
         }[decision.mode]
 
     @staticmethod
-    def _meta(decision: Decision, stage: str, cached: bool = False) -> dict:
+    def _meta(
+        decision: Decision, stage: str, cached: bool = False, quiz_code: str | None = None
+    ) -> dict:
         return {
             "type": "meta",
             "mode": decision.mode.value,
@@ -395,6 +435,10 @@ class TutorNodes:
             "stage": stage,
             "can_show_answer": decision.can_show_answer,
             "offer_answer": decision.offer_answer,
+            "offer_quiz": decision.offer_quiz,
+            "quiz_concept": decision.quiz_concept,
+            "quiz": decision.quiz,
+            "quiz_code": quiz_code,  # a new quiz question's snippet, for the code box
             "cached": cached,
         }
 
@@ -406,7 +450,10 @@ class TutorNodes:
         progress = state["progress"]
         features = state.get("features")
         emit_step(writer, "generate", "running")
-        writer(self._meta(decision, cls.stage.value))
+        writer(self._meta(decision, cls.stage.value, quiz_code=state.get("quiz_code")))
+        if (scripted := state.get("scripted")) is not None:
+            writer({"type": "token", "text": scripted})  # quiz text written by code, no model
+            return {"reply": scripted, "citations": [], "guarded": False, "degraded": False}
 
         context = [(i + 1, c.text[:1200]) for i, c in enumerate(retrieval.chunks)]
         findings: list[str] = []
@@ -414,6 +461,8 @@ class TutorNodes:
             findings += [f"{PATTERNS[p].id}: {PATTERNS[p].symptom}" for p in features.patterns]
             if features.parse_error:
                 findings.append(f"syntax error: {features.parse_error}")
+        if decision.mode is Mode.CONFIRM:
+            findings += [f"fixed now: {PATTERNS[p].symptom}" for p in progress.last_patterns]
         findings += runtime_findings(state.get("runtime"), state.get("cases") or [])
         messages = [
             ("system", system_prompt(decision, cls.stage)),
@@ -483,6 +532,8 @@ class TutorNodes:
         learner_id = state.get("learner_id")
         if not (self.d.memory and learner_id and progress.learner_id == learner_id):
             return
+        if state.get("quiz_turn"):
+            return  # quiz answers are practice, not progress on the learner's problem
         every = self.d.settings.memory_write_every
         revealed = decision.mode is Mode.REVEAL
         if not (revealed or (decision.mode is Mode.HINT and progress.hints_given % every == 0)):
@@ -529,14 +580,27 @@ class TutorNodes:
 
         had_history = bool(progress.history)  # the prompt depended on earlier turns
         hints_before = progress.hints_given
-        if decision.mode is Mode.HINT:
+        if state.get("quiz_turn"):
+            pass  # the ladder stays reset during a quiz; the quiz has its own one hint
+        elif decision.mode is Mode.HINT:
             progress.hints_given += 1
             progress.started_at = progress.started_at or self.d.clock()
-        elif decision.mode is Mode.REVEAL:
-            progress.reveals += 1
+        elif decision.mode in (Mode.REVEAL, Mode.CONFIRM):
+            if decision.mode is Mode.REVEAL:
+                progress.reveals += 1
+            else:  # solved: a quiz on that bug is now on offer
+                progress.quiz_offer = next(iter(progress.last_patterns), "")
             progress.hints_given = 0
             progress.started_at = 0.0
             progress.repeated_submissions = 0
+        features = state.get("features")
+        if (
+            state.get("code")
+            and features
+            and not features.parse_error
+            and not state.get("quiz_turn")
+        ):
+            progress.last_patterns = features.patterns  # what the next fix is judged against
 
         at = str(self.d.clock())  # lets a later write skip turns from before Forget me
         if not state.get("foreign"):

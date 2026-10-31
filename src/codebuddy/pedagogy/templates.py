@@ -114,6 +114,13 @@ _ERROR_TEMPLATE = """Explanation template (max {words} words total):
 ERROR_TEMPLATE = _ERROR_TEMPLATE.format(words=90)
 REVEAL_TEMPLATE = _ERROR_TEMPLATE.format(words=120)
 
+CONFIRM_RULE = (
+    "The learner fixed the bug: their new code no longer has the problem from before. Use at "
+    "most 60 words, plain words. Say in one sentence what their change fixed, using their own "
+    "code (do not write new or corrected code). Ask them to say in one sentence why the fix "
+    "works. Then mention that a short quiz on the same kind of bug is available."
+)
+
 OFFER_LINE = (
     "End by saying, warmly, that they can press 'Show answer' whenever they want the full "
     "solution, and that struggling with this is normal."
@@ -132,6 +139,8 @@ def system_prompt(decision: Decision, stage: PcditStage) -> str:
     elif decision.mode is Mode.REVEAL:
         parts.append(LEVEL_RULES[HintLevel.REVEAL])
         parts.append(REVEAL_TEMPLATE)
+    elif decision.mode is Mode.CONFIRM:
+        parts.append(CONFIRM_RULE)
     elif decision.mode is Mode.EXPLAIN:
         parts.append(
             "Explain the concept directly and concisely (at most 120 words) from the context. "

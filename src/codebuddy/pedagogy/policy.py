@@ -5,10 +5,31 @@ Pure function. The LLM only verbalizes the chosen mode (spec Section 8).
 
 from __future__ import annotations
 
+from codebuddy.agent.code_analysis import PATTERNS, CodeFeatures
 from codebuddy.pedagogy.frustration import Signals
 from codebuddy.schemas import Decision, HintLevel, Intent, Mode, SessionProgress
 
 _LAST_HINT = HintLevel.SCAFFOLD
+
+
+def fixed_it(
+    progress: SessionProgress,
+    features: CodeFeatures | None,
+    code_changed: bool,
+    runtime: dict | None = None,
+) -> bool:
+    """The learner fixed the bug, judged from their code alone, never from what they say.
+
+    True when the last code they sent had bug patterns, this code is different, it parses,
+    none of those patterns remain, and a trace that ran this turn (if any) did not fail.
+    """
+    if not (progress.last_patterns and code_changed and features) or features.parse_error:
+        return False
+    if any(p in features.patterns for p in progress.last_patterns):
+        return False
+    if runtime and runtime.get("ran"):
+        return not (runtime.get("error") or runtime.get("timed_out"))
+    return True
 
 
 def decide_mode(
@@ -29,6 +50,14 @@ def decide_mode(
             level=HintLevel.REVEAL,
             can_show_answer=True,
             reasons=["explicit show-answer request"],
+        )
+    if signals.fixed and intent is not Intent.PROBLEM_START:
+        fixed = next((p for p in progress.last_patterns if p in PATTERNS), None)
+        return Decision(
+            mode=Mode.CONFIRM,
+            offer_quiz=fixed is not None,
+            quiz_concept=PATTERNS[fixed].concept if fixed else None,
+            reasons=["bug fixed"],
         )
     if intent is Intent.OFF_TOPIC:
         return Decision(mode=Mode.REDIRECT, can_show_answer=can_show, reasons=["off topic"])

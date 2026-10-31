@@ -49,6 +49,11 @@ REVEAL = (
     "What would you change to add only the first two items?"
 )
 
+CONFIRM = (
+    "Nice work, that fixed it: your loop now stops at the last valid index. In one sentence, "
+    "why does your change work? When you are ready, try a short quiz on the same kind of bug."
+)
+
 
 class DemoTutor:
     """Picks a canned reply from the hint level named in the system prompt."""
@@ -59,6 +64,8 @@ class DemoTutor:
             text = REVEAL
         elif (m := re.search(r"Hint level (\d)", system)) and int(m.group(1)) in HINTS:
             text = HINTS[int(m.group(1))]
+        elif "The learner fixed the bug" in system:
+            text = CONFIRM
         elif "Explain the concept directly" in system:
             text = (
                 "A loop repeats a block of code, visiting one item at a time [1]. "

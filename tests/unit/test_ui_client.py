@@ -203,3 +203,17 @@ def test_api_error_says_whether_the_request_reached_the_server():
     with pytest.raises(ApiError) as err:
         list(_client(lambda r: httpx.Response(429, text="slow")).stream_approve("s", "t1", True))
     assert err.value.status == 429 and err.value.reached is True
+
+
+def test_stream_quiz_posts_the_session_and_optional_learner():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"], seen["body"] = request.url.path, request.read().decode().replace(" ", "")
+        return httpx.Response(200, text='event: done\ndata: {"ok": true}\n\n')
+
+    client = _client(handler)
+    assert list(client.stream_quiz("s")) == [("done", {"ok": True})]
+    assert seen["path"] == "/v1/quiz" and seen["body"] == '{"session_id":"s"}'
+    list(client.stream_quiz("s", learner_id="a" * 16))
+    assert f'"learner_id":"{"a" * 16}"' in seen["body"]

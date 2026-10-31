@@ -2,8 +2,8 @@
 
 Run:  uv run uvicorn codebuddy.api.app:app --port 8000
 
-Endpoints (see docs/api.md): /healthz, /v1/turn, /v1/show-answer, /v1/approve, /v1/stt,
-/v1/session/{id}, /v1/metrics. Everything under /v1 honors API keys and rate limits.
+Endpoints (see docs/api.md): /healthz, /v1/turn, /v1/show-answer, /v1/quiz, /v1/approve,
+/v1/stt, /v1/session/{id}, /v1/metrics. Everything under /v1 honors API keys and rate limits.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from langgraph.types import Command
 
 from codebuddy.agent.deps import Deps
 from codebuddy.agent.graph import build_graph, new_turn_id, run_turn
+from codebuddy.agent.nodes import HISTORY_CHARS, HISTORY_TURNS, TutorNodes
 from codebuddy.api.security import (
     LearnerTokens,
     PendingApprovals,
@@ -35,10 +36,13 @@ from codebuddy.cache import keys
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
+from codebuddy.pedagogy.quiz import BANK, new_quiz, question_text, quiz_meta
 from codebuddy.schemas import (
     LEARNER_TOKEN,
     ApproveRequest,
+    Decision,
     Mode,
+    QuizRequest,
     ShowAnswerRequest,
     TurnRequest,
 )
@@ -47,6 +51,7 @@ from codebuddy.stt.transcribe import TranscriptionError
 log = logging.getLogger("codebuddy.api")
 
 SHOW_ANSWER_MESSAGE = "Show me the full answer."
+QUIZ_MESSAGE = "Give me a quiz."
 AUDIO_TYPES = ("audio/", "video/webm", "application/octet-stream")
 SHUTDOWN_DRAIN_S = 5.0  # how long shutdown waits for background work such as memory writes
 
@@ -283,6 +288,37 @@ def create_app(
             req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language, learner_id
         )
         return stream_response(events, req.session_id, req.code)
+
+    @app.post("/v1/quiz")
+    async def quiz(req: QuizRequest, key: str | None = Depends(guard)):
+        """Start a five-question quiz on the bug the learner just fixed. Written by code from
+        the hand-checked bank in pedagogy/quiz.py: no model call. Answers come in as turns."""
+        await turn_learner(req.session_id, req.learner_id, key)
+        d = current()
+        progress = await d.sessions.load(req.session_id)
+        if progress.quiz_offer not in BANK:
+            raise HTTPException(409, "Nothing to quiz on yet: fix a bug first")
+        progress.quiz = new_quiz(progress.quiz_offer)
+        progress.last_patterns = []  # quiz code never counts as a fix of the learner's own bug
+        progress.hints_given, progress.started_at, progress.repeated_submissions = 0, 0.0, 0
+        text = question_text(progress.quiz)
+        at = str(d.clock())
+        progress.history = [
+            *progress.history,
+            {"role": "learner", "text": QUIZ_MESSAGE, "at": at},
+            {"role": "tutor", "text": text[:HISTORY_CHARS], "at": at},
+        ][-HISTORY_TURNS:]
+        await d.sessions.save(progress)
+        decision = Decision(mode=Mode.QUIZ, quiz=quiz_meta(progress.quiz))
+        snippet = BANK[progress.quiz["pattern"]][0].snippet
+
+        async def events() -> AsyncIterator[dict]:
+            yield TutorNodes._meta(decision, progress.stage.value, quiz_code=snippet)
+            yield {"type": "token", "text": text}
+            state = {"progress": progress}  # no "reply": the leak judge has nothing to audit
+            yield {"type": "final", "state": state, "interrupt": None, "thread_id": new_turn_id()}
+
+        return stream_response(events(), req.session_id, None)
 
     @app.post("/v1/approve", dependencies=[Depends(guard)])
     async def approve(req: ApproveRequest):

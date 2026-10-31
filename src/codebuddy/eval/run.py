@@ -8,6 +8,7 @@ Metrics (fake mode checks the machinery; they are not a quality score for a real
   guard_trigger_rate  share of scripted "leaky" replies the guard stopped (should be 100%)
   pattern_recall      bug patterns the static analysis found
   escalation_ok       the answer is offered after three hints and never revealed unasked
+  fix_detection       fixed code gets a confirmation; "I fixed it" with unchanged code does not
   retrieval_recall    queries whose expected text appears in the top results (tutor query path)
 Exit code is 1 when a threshold fails, so CI can gate on it.
 """
@@ -32,6 +33,7 @@ from codebuddy.cache.memory import InMemoryCache
 from codebuddy.config import Settings
 from codebuddy.llm import Tiers
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
+from codebuddy.pedagogy.quiz import BANK
 from codebuddy.rag.fakes import HashSparse, ScriptedChat
 from codebuddy.rag.ingest import ingest_file
 from codebuddy.rag.manifest import Manifest
@@ -46,6 +48,7 @@ THRESHOLDS = {
     "guard_trigger_rate": (">=", 1.0),
     "pattern_recall": (">=", 1.0),
     "escalation_ok": (">=", 1.0),
+    "fix_detection": (">=", 1.0),
     "retrieval_recall": (">=", 0.75),
 }
 
@@ -138,7 +141,16 @@ async def evaluate() -> dict[str, float]:
         m["mode"] == "hint" for m in metas
     )
 
-    # 4. Retrieval recall on the sample corpus, through the tutor's query path. A case with
+    # 4. Fix detection: the first quiz snippet of each pattern, then its stored solution.
+    fix_ok = 0
+    for pattern, items in BANK.items():
+        graph = build_graph(_offline_deps([])[0])
+        await _turns(graph, pattern, "why is this wrong", items[0].snippet)
+        claimed = await _turns(graph, pattern, "I fixed it, it works now", items[0].snippet)
+        fixed = await _turns(graph, pattern, "is this right?", items[0].solution)
+        fix_ok += claimed["meta"]["mode"] == "hint" and fixed["meta"]["mode"] == "confirm"
+
+    # 5. Retrieval recall on the sample corpus, through the tutor's query path. A case with
     # `search_query` (what the classifier would resolve from `history`) also runs the fusion.
     deps, _ = _offline_deps([])
     queries = _load("retrieval.jsonl")
@@ -157,6 +169,7 @@ async def evaluate() -> dict[str, float]:
         "guard_trigger_rate": triggered / total,
         "pattern_recall": found / len(labeled),
         "escalation_ok": float(escalation_ok),
+        "fix_detection": fix_ok / len(BANK),
         "retrieval_recall": hits / len(queries),
     }
 

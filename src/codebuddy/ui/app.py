@@ -24,6 +24,11 @@ LEVEL_NAMES = {
     3: "Hint 4: a plan",
     4: "Full answer",
 }
+QUIZ_MESSAGES = {
+    "try_quiz": "Give me a quiz.",
+    "skip_question": "Skip this question.",
+    "stop_quiz": "Stop the quiz.",
+}
 MEMORY_BOX = "remember_me"
 TITLE_CHARS = 40
 AVATARS = {"user": ":material/person:", "assistant": ":material/school:"}
@@ -71,6 +76,8 @@ def new_chat(code: str = "") -> dict:
         "stage": "P",
         "can_show": False,
         "offer": False,
+        "quiz_offer": False,  # the tutor saw a fix and offers a quiz on that bug
+        "quiz": None,  # {"index", "total", "difficulty", "score"} while a quiz runs
         "pending": None,  # a turn waiting for permission to run the learner's code
         "remember": True,  # the "remember my choice" box under that permission prompt
         "code": code,
@@ -326,12 +333,20 @@ def reply_caption(meta: dict | None) -> str:
     if not meta:
         return ""
     badges = []
-    if meta.get("mode") == "hint" and meta.get("level") is not None:
+    if quiz := meta.get("quiz"):
+        badges.append(f"Quiz {quiz['index'] + 1} of {quiz['total']} ({quiz['difficulty']})")
+        if meta.get("mode") == "hint":
+            badges.append("hint")
+    elif meta.get("mode") == "hint" and meta.get("level") is not None:
         badges.append(LEVEL_NAMES[meta["level"]])
     elif meta.get("mode") == "reveal":
         badges.append(LEVEL_NAMES[4])
     elif meta.get("mode") == "explain":
         badges.append("Explanation")
+    elif meta.get("mode") == "confirm":
+        badges.append("You fixed it")
+    elif meta.get("mode") == "quiz":
+        badges.append("Quiz")
     if meta.get("cached"):
         badges.append("instant")
     return " · ".join(badges)
@@ -359,6 +374,24 @@ def show_answer_button(chat: dict) -> bool:
     )
 
 
+def quiz_buttons(chat: dict) -> str | None:
+    """Try a quiz after a fix; Skip question and Stop quiz while one runs. Returns the key."""
+    if chat["quiz"]:
+        left, right = st.columns(2)
+        if left.button("Skip question", key="skip_question", icon=":material/skip_next:"):
+            return "skip_question"
+        if right.button("Stop quiz", key="stop_quiz", icon=":material/stop:"):
+            return "stop_quiz"
+    elif chat["quiz_offer"] and st.button(
+        "Try a quiz",
+        key="try_quiz",
+        icon=":material/quiz:",
+        help="Five short questions on the same kind of bug, from easy to hard.",
+    ):
+        return "try_quiz"
+    return None
+
+
 def render_steps(record: dict) -> None:
     """The collapsed step summary of a finished turn."""
     if record.get("steps"):
@@ -367,20 +400,24 @@ def render_steps(record: dict) -> None:
             st.markdown(steps_markdown(record["steps"]))
 
 
-def render_thread(chat: dict, stale: bool) -> bool:
-    """Draw past messages. Returns True when Show answer (under the latest reply) was clicked."""
+def render_thread(chat: dict, stale: bool) -> str | None:
+    """Draw past messages. Returns the key of the button clicked under the latest reply:
+    show_answer, try_quiz, skip_question or stop_quiz."""
     messages = chat["messages"]
     latest = max((i for i, m in enumerate(messages) if m["role"] == "assistant"), default=-1)
-    allow_show = chat["can_show"] and not chat["pending"] and not stale
-    clicked = False
+    active = not chat["pending"] and not stale
+    allow_show = chat["can_show"] and not chat["quiz"] and active
+    clicked = None
     for i, m in enumerate(messages):
         with st.chat_message(m["role"], avatar=AVATARS[m["role"]]):
             render_steps(m)
             st.markdown(m["content"])
             if m["role"] == "assistant":
                 render_footer(m.get("meta"), m.get("done"))
-                if i == latest and allow_show:
-                    clicked = show_answer_button(chat)
+                if i == latest and allow_show and show_answer_button(chat):
+                    clicked = "show_answer"
+                if i == latest and active:
+                    clicked = quiz_buttons(chat) or clicked
     return clicked
 
 
@@ -557,6 +594,10 @@ def apply_result(chat: dict, result: dict) -> None:
         chat["offer"] = bool(meta.get("offer_answer"))
         if meta.get("mode") == "reveal":
             chat["can_show"], chat["offer"] = False, False
+        chat["quiz_offer"], chat["quiz"] = bool(meta.get("offer_quiz")), meta.get("quiz")
+        if meta.get("quiz_code"):  # a new quiz question: put its code in the box to edit
+            chat["code"] = meta["quiz_code"]
+            st.session_state.pop(f"code_{chat['session_id']}", None)  # redraw with the new text
 
 
 def run_turn(
@@ -608,7 +649,7 @@ def main() -> None:
 
     st.markdown("#### Let's work it out together")
     stage_line(chat["stage"])
-    show_clicked = render_thread(chat, stale)
+    clicked = render_thread(chat, stale)
     approve = decline = False
     if chat["pending"]:
         approve, decline = permission_prompt(chat)
@@ -643,7 +684,22 @@ def main() -> None:
                 note = error_text(failed, APPROVAL_ERRORS)
             st.session_state["turn_note"] = note
             st.rerun()  # redraw so the prompt shows only if it was kept
-    elif show_clicked:
+    elif clicked == "try_quiz":
+        run_turn(
+            chat,
+            QUIZ_MESSAGES[clicked],
+            lambda: client.stream_quiz(session_id, **who),
+            learner,
+        )
+    elif clicked in ("skip_question", "stop_quiz"):
+        text = QUIZ_MESSAGES[clicked]
+        run_turn(
+            chat,
+            text,
+            lambda: client.stream_turn(session_id, text, code or None, LANGUAGE, **who),
+            learner,
+        )
+    elif clicked == "show_answer":
         run_turn(
             chat,
             "Show me the full answer.",

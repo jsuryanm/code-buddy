@@ -50,3 +50,10 @@ def test_token_caps_default_per_mode():
     s = Settings()
     assert (s.max_tokens_hint, s.max_tokens_explain) == (250, 320)
     assert (s.max_tokens_reveal, s.max_tokens_redirect) == (900, 90)
+
+
+def test_confirm_prompt_is_short_plain_and_writes_no_new_code():
+    prompt = system_prompt(Decision(mode=Mode.CONFIRM), PcditStage.T)
+    assert STYLE_RULE in prompt and "at most 60 words" in prompt
+    assert "why the fix works" in prompt and "quiz" in prompt
+    assert "do not write new or corrected code" in prompt

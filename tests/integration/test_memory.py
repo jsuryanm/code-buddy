@@ -249,6 +249,7 @@ async def test_a_session_bound_to_one_learner_refuses_another(make_harness):
         for path, body in (
             ("/v1/turn", {"message": "show me the answer", "code": BUGGY}),
             ("/v1/show-answer", {"code": BUGGY}),
+            ("/v1/quiz", {}),
         ):
             r = await client.post(path, json={"session_id": "s1", "learner_id": b, **body})
             assert r.status_code == 409
