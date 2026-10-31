@@ -217,6 +217,22 @@ def test_remember_my_choice_is_per_chat():
     assert stub.approvals == [("t1", True, False), ("t1", True, True)]
 
 
+def test_remember_my_choice_survives_switching_chats():
+    stub = Stub()
+    at = make_app(stub)
+    code_box(at).set_value("print(nums[9])").run()
+    at.chat_input[0].set_value("it will crash").run()
+    first = at.session_state["chat_id"]
+    at.checkbox(key=f"remember_{first}").uncheck().run()
+
+    at.button(key="new_chat").click().run()
+    assert at.session_state["chat_id"] != first
+    at.button(key=f"chat_{first}").click().run()
+    assert at.checkbox(key=f"remember_{first}").value is False
+    at.button(key="approve_run").click().run()
+    assert stub.approvals == [("t1", True, False)]
+
+
 def failed_approval(status) -> tuple[Stub, AppTest]:
     stub = Stub()
 

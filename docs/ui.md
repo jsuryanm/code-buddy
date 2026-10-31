@@ -36,7 +36,7 @@ on the page. The language is always `python`; it is sent with every turn but not
 Each chat is one server session. Its state lives in `st.session_state.chats` (a list, newest
 first), and `chat_id` names the open one. A chat holds `session_id`, `messages` (role, content,
 meta, done, steps, elapsed), `stage`, `can_show`, `offer`, `pending` (a turn waiting for
-permission, with its steps), `code`, `transcript` (what voice input heard, waiting to be edited
+permission, with its steps), `code`, `remember` (the "remember my choice" box, kept across chat switches), `transcript` (what voice input heard, waiting to be edited
 and sent), `voice_note` (why the last recording could not be transcribed), and `learner` (the token its session is bound to on the
 server, or none; set only after a turn or Show answer sent with a token succeeds). **New chat** on an empty chat does nothing; a chat with no messages is replaced
 rather than piling up. Chats last as long as the browser tab.

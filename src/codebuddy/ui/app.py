@@ -72,6 +72,7 @@ def new_chat(code: str = "") -> dict:
         "can_show": False,
         "offer": False,
         "pending": None,  # a turn waiting for permission to run the learner's code
+        "remember": True,  # the "remember my choice" box under that permission prompt
         "code": code,
         "learner": None,  # the learner token this chat's session is bound to on the server
         "transcript": None,  # what voice input heard, waiting to be edited and sent
@@ -391,8 +392,10 @@ def permission_prompt(chat: dict) -> tuple[bool, bool]:
         st.markdown(f"**{pending['message']}**")
         st.caption("It runs in a restricted sandbox with no network and shows what happened.")
         st.code(pending.get("code", ""), language="python")
-        st.checkbox(
-            "Remember my choice for this chat", value=True, key=f"remember_{chat['session_id']}"
+        chat["remember"] = st.checkbox(
+            "Remember my choice for this chat",
+            value=chat["remember"],
+            key=f"remember_{chat['session_id']}",
         )
         left, right = st.columns(2)
         approve = left.button(
@@ -621,7 +624,7 @@ def main() -> None:
     session_id = chat["session_id"]
     who = {"learner_id": learner} if learner else {}
     if approve or decline:
-        pending, remember = chat["pending"], st.session_state.get(f"remember_{session_id}", True)
+        pending, remember = chat["pending"], chat["remember"]
         chat["pending"] = None
         turn_id = pending["turn_id"]
         failed = run_turn(
