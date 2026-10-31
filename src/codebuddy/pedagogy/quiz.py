@@ -6,6 +6,7 @@ easy (short, obvious), two medium (the bug inside a slightly longer function), o
 bug less visible, in a nested loop or a helper). Each answer is graded from the code: it parses
 and the pattern is gone. A first wrong try gets one guarded level-0 hint from the model; a
 second wrong try, "skip", or a request for the answer shows the stored solution and moves on.
+Code sent back unchanged is not graded: it gets a short nudge and costs no try.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from codebuddy.pedagogy.frustration import asks_for_answer, skips_question, stop
 TOTAL = 5
 DIFFICULTIES = ("easy", "easy", "medium", "medium", "hard")
 ASK = "Find the bug, fix it in the code box, and send it."
+NUDGE = "Edit the code in the box to fix the bug, then send it."
 
 
 @dataclass(frozen=True)
@@ -257,12 +259,21 @@ def _move_on(quiz: dict, right: bool, lead: str) -> QuizStep:
     return QuizStep(quiz, f"{lead}\n\n{question_text(quiz)}", current(quiz).snippet)
 
 
+def _same_code(a: str, b: str) -> bool:
+    """Equal apart from blank lines and trailing spaces (the UI may reformat the code box)."""
+
+    def lines(code: str) -> list[str]:
+        return [line.rstrip() for line in code.splitlines() if line.strip()]
+
+    return lines(a) == lines(b)
+
+
 def _reveal(quiz: dict) -> str:
     return f"Here is one way to fix it:\n\n```python\n{current(quiz).solution}```"
 
 
 def advance(
-    quiz: dict, message: str, features: CodeFeatures | None, has_code: bool
+    quiz: dict, message: str, features: CodeFeatures | None, code: str | None
 ) -> QuizStep | None:
     """Grade one turn of a running quiz. None when the turn is not a quiz answer (no code and
     no skip or stop), so the tutor answers it normally and the quiz stays where it is."""
@@ -271,8 +282,10 @@ def advance(
         return QuizStep(None, f"Quiz stopped. You got {quiz['score']} of {answered}.")
     if skips_question(message) or asks_for_answer(message):
         return _move_on(quiz, False, _reveal(quiz))
-    if not (has_code and features):
+    if not (code and features):
         return None
+    if _same_code(code, current(quiz).snippet):
+        return QuizStep(quiz, NUDGE)  # not an answer yet: no grading, no try counted
     if features.parse_error is None and quiz["pattern"] not in features.patterns:
         return _move_on(quiz, True, "Correct.")
     if quiz["tries"] == 0:

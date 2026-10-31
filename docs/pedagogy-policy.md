@@ -113,7 +113,7 @@ problem left the next question at a high hint level. `meta` carries `offer_quiz:
 ## Quiz after a fix
 
 `POST /v1/quiz` starts a set of five questions on the bug pattern just fixed
-(`progress.quiz_offer`); 409 when there is nothing to quiz on. The questions come from a
+(`progress.quiz_offer`); 404 when there is nothing to quiz on. The questions come from a
 hand-written bank in `pedagogy/quiz.py`, not from the model: five snippets per pattern, in rising
 difficulty (two easy, two medium, one hard). Easy is a short, obvious version; medium hides the
 bug in a slightly longer function; hard puts it in a nested loop or a helper. Each entry stores its
@@ -126,6 +126,7 @@ set, each turn is graded by `advance()` before the normal policy:
 
 | Turn | Result |
 |---|---|
+| Code unchanged from the question (ignoring blank lines and trailing spaces) | Not graded: a short nudge from code, "Edit the code in the box to fix the bug, then send it."; no try counted |
 | Code that parses with the pattern gone | "Correct.", score + 1, and the next question in the same reply (no extra button) |
 | First wrong try (pattern still there, or a syntax error) | One hint from the model: the normal level-0 hint prompt, leak guard on |
 | Second wrong try, "skip", or an explicit request for the answer | The stored solution, written by code; the question is marked wrong and the next one follows |
@@ -134,7 +135,8 @@ set, each turn is graded by `advance()` before the normal policy:
 | Answer to question 5 | A summary, "4 of 5"; if any were wrong, one sentence naming the difficulties to review. The quiz is cleared |
 
 Showing a quiz solution is a reveal from code, from the bank's stored `solution`, so the guard is
-not involved. There is no ladder inside a quiz: quiz turns never change `hints_given`, run no tools,
+not involved. A quiz answer skips the classifier and retrieval (it goes from `check_cache` straight
+to `policy`). There is no ladder inside a quiz: quiz turns never change `hints_given`, run no tools,
 skip the answer cache, and write nothing to learner memory. Show answer is hidden while a quiz
 runs. `meta` carries `quiz: {"index", "total", "difficulty", "score"}` while one is active, and
 `quiz_code`, the snippet of a new question, so the UI can put it into the code box.

@@ -3,7 +3,7 @@ from collections import Counter
 import pytest
 
 from codebuddy.agent.code_analysis import PATTERNS, analyze
-from codebuddy.pedagogy.quiz import BANK, TOTAL, advance, new_quiz, quiz_meta
+from codebuddy.pedagogy.quiz import BANK, NUDGE, TOTAL, advance, new_quiz, quiz_meta
 
 ITEMS = [(p, i, item) for p, items in BANK.items() for i, item in enumerate(items)]
 
@@ -25,7 +25,7 @@ def test_snippet_has_exactly_its_bug_and_solution_has_none(pattern, index, item)
 
 
 def answer(quiz, code="", message="here"):
-    return advance(quiz, message, analyze(code or None), bool(code))
+    return advance(quiz, message, analyze(code or None), code or None)
 
 
 def test_correct_answer_scores_and_sends_the_next_question():
@@ -40,7 +40,7 @@ def test_correct_answer_scores_and_sends_the_next_question():
 def test_first_wrong_try_asks_for_a_hint_second_reveals_and_moves_on():
     quiz = new_quiz("uninitialized_accumulator")
     snippet = BANK["uninitialized_accumulator"][0].snippet
-    first = answer(quiz, snippet)
+    first = answer(quiz, snippet + "# try\n")
     assert first.text is None and first.quiz["tries"] == 1 and first.quiz["index"] == 0
     second = answer(first.quiz, snippet + "# still\n")
     assert BANK["uninitialized_accumulator"][0].solution in second.text
@@ -55,19 +55,32 @@ def test_a_parse_error_is_a_wrong_try():
 
 @pytest.mark.parametrize("message", ["skip", "Skip this question", "just show me the answer"])
 def test_skip_or_answer_request_reveals_the_solution(message):
-    step = advance(new_quiz("shadowed_builtin"), message, analyze(None), False)
+    step = advance(new_quiz("shadowed_builtin"), message, analyze(None), None)
     assert BANK["shadowed_builtin"][0].solution in step.text
     assert step.quiz["index"] == 1 and step.quiz["results"] == [False]
 
 
 def test_stop_ends_the_quiz():
     quiz = {**new_quiz("off_by_one_range"), "index": 2, "score": 1, "results": [True, False]}
-    step = advance(quiz, "stop the quiz", analyze(None), False)
+    step = advance(quiz, "stop the quiz", analyze(None), None)
     assert step.quiz is None and "1 of 2" in step.text
 
 
+@pytest.mark.parametrize("tweak", [lambda c: c, lambda c: "\n" + c.replace("\n", "  \n") + "\n"])
+def test_unchanged_question_code_gets_a_nudge_and_no_try(tweak):
+    quiz = new_quiz("off_by_one_range")
+    step = answer(quiz, tweak(BANK["off_by_one_range"][0].snippet))
+    assert step.text == NUDGE and step.quiz == quiz and step.code is None
+
+
+def test_unchanged_code_with_skip_still_skips():
+    quiz = new_quiz("off_by_one_range")
+    step = answer(quiz, BANK["off_by_one_range"][0].snippet, "skip")
+    assert step.quiz["index"] == 1 and BANK["off_by_one_range"][0].solution in step.text
+
+
 def test_a_message_without_code_is_not_a_quiz_turn():
-    assert advance(new_quiz("off_by_one_range"), "what is range?", analyze(None), False) is None
+    assert advance(new_quiz("off_by_one_range"), "what is range?", analyze(None), None) is None
 
 
 def test_after_the_fifth_question_a_summary_names_what_to_review():

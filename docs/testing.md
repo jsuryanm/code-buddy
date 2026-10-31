@@ -45,7 +45,7 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_ui_voice_approval.py` | Permission prompt (approve, decline) and editing a transcript before sending |
 | `tests/integration/test_memory.py` | Memory through the graph and API: recall and `<memory>` prompt block, timeout, background writes on reveal and every Nth hint, cache bypass and no shared storing, tag stripping, client-chosen ids (422) and forged tokens (403), tokens bound to an API key, the secret surviving a restart, session binding (409, concurrent first turns, and the graph backstop), the session status route on a bound session, list and forget endpoints |
 | `tests/integration/test_ui_memory.py` | Opt-in box, token minting, **Use this profile** for links, Forget me, mint failures |
-| `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; `/v1/quiz` (409 before a fix, no model call, API key), correct answers, the guarded quiz hint, skip, stop, and the summary |
+| `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; `/v1/quiz` (404 before a fix, no model call, API key), correct answers, the nudge for unchanged code, the guarded quiz hint, no classifier or retrieval on quiz answers, skip, stop, and the summary |
 | `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 

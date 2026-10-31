@@ -75,6 +75,7 @@ flowchart LR
     C -- miss --> E[classify]
     C -- miss --> F[retrieve]
     C -- miss --> M[recall_memory<br/>opt-in, 0.6 s timeout]
+    C -- quiz answer --> G
     E --> R[refine_retrieval]
     F --> R
     M --> R
@@ -100,7 +101,7 @@ flowchart LR
 | `retrieve` | Hybrid search over the `fundamentals` corpus with `build_query()`: the message plus concepts and search terms of detected bug patterns and names of built-ins the code calls, never the code itself. Runs in parallel with `classify` | `rag/retrieve.py`, `rag/query.py` |
 | `recall_memory` | Only when memory is on and the turn has a verified learner token: searches that learner's notes with the message, under a timeout (`MEMORY_RECALL_TIMEOUT_S`). Errors and timeouts give no notes. Runs in parallel with `classify` and `retrieve` | `agent/nodes.py` |
 | `refine_retrieval` | Retrieves again with the classifier's standalone `search_query` and concepts when that query differs from the first, then merges both lists by reciprocal rank fusion. Skipped for foreign turns. See [rag-and-ingestion.md](rag-and-ingestion.md#query-building-and-fusion) | `agent/nodes.py`, `rag/query.py` |
-| `policy` | While a quiz runs, grades the answer first (`quiz.advance()`): a reply written by code, or one level-0 hint. Otherwise `fixed_it()` sets the fixed signal and `decide_mode()` runs with intent, progress, signals, and the clock. Also plans which tools to use (none during a quiz) | `pedagogy/policy.py`, `pedagogy/quiz.py` |
+| `policy` | While a quiz runs, grades the answer first (`quiz.advance()`): a reply written by code, or one level-0 hint. A quiz answer comes here straight from `check_cache`, skipping `classify`, `retrieve`, `recall_memory`, and `refine_retrieval`. Otherwise `fixed_it()` sets the fixed signal and `decide_mode()` runs with intent, progress, signals, and the clock. Also plans which tools to use (none during a quiz) | `pedagogy/policy.py`, `pedagogy/quiz.py` |
 | `route_tools` | Maps the learner's stored permission to run, ask, or skip | `tools/policy.py` |
 | `approve_run` | Pauses with `interrupt()` until the learner approves or declines running their code | `agent/nodes.py` |
 | `run_tools` | Calls the planned tools through the tool runner (MCP or in-process) with a timeout | `agent/nodes.py` |
@@ -111,6 +112,8 @@ flowchart LR
 the first retrieval does not wait for the classifier, and memory adds no time unless it hits its
 timeout. The second, fused retrieval does wait for the classifier, so it adds one search to most
 live turns (cached by L3 and L4; not measured live). Without memory `recall_memory` returns at once.
+An answer to a running quiz (code, "skip", or "stop quiz") skips all four and goes straight to
+`policy`, so replies written by code come back without a model call or a search.
 
 ### Streaming events
 

@@ -170,12 +170,20 @@ class TutorNodes:
             }
         return {"cache_key": key, "cache_locked": locked}
 
+    @staticmethod
+    def _quiz_step(state: TutorState):
+        """The grading of a running quiz for this turn, or None when it is not a quiz answer."""
+        quiz = state["progress"].quiz
+        if quiz is None:
+            return None
+        return advance(quiz, state["message"], state.get("features"), state.get("code"))
+
     def route_after_cache(self, state: TutorState):
-        return (
-            "emit_cached"
-            if state.get("cached_reply")
-            else ["classify", "retrieve", "recall_memory"]
-        )
+        if state.get("cached_reply"):
+            return "emit_cached"
+        if self._quiz_step(state) is not None:
+            return "policy"  # a quiz answer is graded by code: no classifier, no retrieval
+        return ["classify", "retrieve", "recall_memory"]
 
     async def emit_cached(self, state: TutorState) -> dict:
         writer = get_stream_writer()
@@ -287,9 +295,7 @@ class TutorNodes:
         emit_step(writer, "policy", "running")
         features = state.get("features")
         update: dict = {"progress": progress}
-        step = None
-        if progress.quiz is not None:
-            step = advance(progress.quiz, state["message"], features, bool(state.get("code")))
+        step = self._quiz_step(state)
         if step is not None:
             # A quiz answer: graded by code. Only a first wrong try reaches the model, as one
             # guarded level-0 hint; everything else is written by code (pedagogy/quiz.py).
@@ -316,7 +322,8 @@ class TutorNodes:
         if progress.quiz is not None:
             decision.quiz, decision.can_show_answer = quiz_meta(progress.quiz), False
         emit_step(writer, "policy", "done", self._decision_detail(decision))
-        update |= {"decision": decision, "tool_plan": self._plan_tools(state, decision)}
+        plan = [] if step is not None else self._plan_tools(state, decision)  # no runs in a quiz
+        update |= {"decision": decision, "tool_plan": plan}
         return update
 
     @staticmethod
@@ -445,12 +452,13 @@ class TutorNodes:
     async def generate(self, state: TutorState) -> dict:
         writer = get_stream_writer()
         decision: Decision = state["decision"]
-        cls = state["classification"]
-        retrieval: RetrievalResult = state["retrieval"]
+        cls = state.get("classification")  # quiz answers skip classify and retrieval
+        retrieval: RetrievalResult = state.get("retrieval") or RetrievalResult([], grounded=False)
         progress = state["progress"]
+        stage = cls.stage if cls else progress.stage
         features = state.get("features")
         emit_step(writer, "generate", "running")
-        writer(self._meta(decision, cls.stage.value, quiz_code=state.get("quiz_code")))
+        writer(self._meta(decision, stage.value, quiz_code=state.get("quiz_code")))
         if (scripted := state.get("scripted")) is not None:
             writer({"type": "token", "text": scripted})  # quiz text written by code, no model
             return {"reply": scripted, "citations": [], "guarded": False, "degraded": False}
@@ -465,7 +473,7 @@ class TutorNodes:
             findings += [f"fixed now: {PATTERNS[p].symptom}" for p in progress.last_patterns]
         findings += runtime_findings(state.get("runtime"), state.get("cases") or [])
         messages = [
-            ("system", system_prompt(decision, cls.stage)),
+            ("system", system_prompt(decision, stage)),
             (
                 "human",
                 user_prompt(
@@ -500,8 +508,8 @@ class TutorNodes:
             log.info("leak guard stopped a reply: %s", leak.reason)
             guarded = True
             await self.d.metrics.incr("guard_stops")
-            concept = cls.concepts[0] if cls.concepts else None
-            emit(("\n\n" if parts else "") + fallback_text(cls.stage, concept))
+            concept = cls.concepts[0] if cls and cls.concepts else None
+            emit(("\n\n" if parts else "") + fallback_text(stage, concept))
         except Exception:
             log.warning("generation failed, degrading", exc_info=True)
             degraded = True

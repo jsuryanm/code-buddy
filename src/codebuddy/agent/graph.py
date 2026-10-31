@@ -1,8 +1,9 @@
 """The tutor graph (spec 12.1, 14.3).
 
-Flow: load_state, analyze_code, check_cache. A cache hit goes to emit_cached. A miss runs
-classify, retrieve and recall_memory (opt-in, timed out) in parallel, then refine_retrieval and
-policy. After policy, route_tools chooses generate directly, run_tools, or approve_run (a
+Flow: load_state, analyze_code, check_cache. A cache hit goes to emit_cached. An answer to a
+running quiz goes straight to policy (graded by code, no classifier or retrieval). Otherwise
+classify, retrieve and recall_memory (opt-in, timed out) run in parallel, then refine_retrieval
+and policy. After policy, route_tools chooses generate directly, run_tools, or approve_run (a
 human-in-the-loop pause that asks the learner before their code is run). generate and
 emit_cached both end in update_state.
 
@@ -69,7 +70,9 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver | None = None):
     g.add_edge("load_state", "analyze_code")
     g.add_edge("analyze_code", "check_cache")
     g.add_conditional_edges(
-        "check_cache", n.route_after_cache, ["emit_cached", "classify", "retrieve", "recall_memory"]
+        "check_cache",
+        n.route_after_cache,
+        ["emit_cached", "policy", "classify", "retrieve", "recall_memory"],
     )
     g.add_edge(["classify", "retrieve", "recall_memory"], "refine_retrieval")  # join: wait for all
     g.add_edge("refine_retrieval", "policy")

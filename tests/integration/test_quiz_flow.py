@@ -5,7 +5,7 @@ import pytest
 
 from codebuddy.api.app import create_app
 from codebuddy.pedagogy.guard import StreamGuard
-from codebuddy.pedagogy.quiz import BANK
+from codebuddy.pedagogy.quiz import BANK, NUDGE
 from tests.helpers import ScriptedChat
 
 BUGGY = "nums = [1, 2, 3]\ntotal = 0\nfor i in range(len(nums) + 1):\n    total += nums[i]\n"
@@ -90,7 +90,7 @@ async def test_quiz_is_refused_before_a_fix(quiz_client):
     client, _ = quiz_client()
     async with client:
         r = await client.post("/v1/quiz", json={"session_id": "none"})
-    assert r.status_code == 409
+    assert r.status_code == 404  # not 409: the UI reads 409 as "another learner's session"
 
 
 async def test_quiz_sends_question_one_without_a_model_call(quiz_client):
@@ -125,11 +125,11 @@ async def test_a_wrong_answer_gets_one_guarded_hint_then_the_solution(quiz_clien
     client, h = quiz_client(standard=model)
     async with client:
         await fix_then_quiz(client)
-        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet)).text)
+        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet + "# hm\n")).text)
         assert meta["mode"] == "hint" and meta["level"] == 0 and meta["quiz"]["index"] == 0
         assert meta["can_show_answer"] is False and text == "What is i on the last pass?"
         assert "Hint level 0" in model.calls[-1][0][1]
-        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet + "# hm\n")).text)
+        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet + "# hm2\n")).text)
     assert QUIZ[0].solution in text and "Quiz 2 of 5" in text
     assert meta["quiz"] == {"index": 1, "total": 5, "difficulty": "easy", "score": 0}
     assert (await h.deps.sessions.load("q")).hints_given == 0  # no ladder inside the quiz
@@ -147,8 +147,44 @@ async def test_the_quiz_hint_is_guarded(quiz_client, monkeypatch):
     client, _ = quiz_client(standard=ScriptedChat(["Q?", "Fixed.", "Hint?"]))
     async with client:
         await fix_then_quiz(client)
-        await answer(client, QUIZ[0].snippet)
+        await answer(client, QUIZ[0].snippet + "# hm\n")
     assert fed[-1] is True
+
+
+async def test_unchanged_question_code_gets_a_nudge_without_a_model_call(quiz_client):
+    model = ScriptedChat(["Q?", "Fixed. Why?"])
+    client, h = quiz_client(standard=model)
+    async with client:
+        await fix_then_quiz(client)
+        meta, text = meta_and_text((await answer(client, QUIZ[0].snippet, "is this it?")).text)
+    assert text == NUDGE and meta["mode"] == "quiz" and len(model.calls) == 2
+    quiz = (await h.deps.sessions.load("q")).quiz
+    assert quiz["index"] == 0 and quiz["tries"] == 0 and quiz["results"] == []
+
+
+async def test_quiz_turns_skip_the_classifier_and_retrieval(quiz_client, monkeypatch):
+    client, h = quiz_client()
+    calls = []
+
+    async def classify(*args, **kwargs):
+        calls.append("classify")
+
+    async def retrieve(*args, **kwargs):
+        calls.append("retrieve")
+
+    async with client:
+        await fix_then_quiz(client)
+        monkeypatch.setattr(h.deps.classifier, "classify", classify)
+        monkeypatch.setattr(h.deps.retriever, "retrieve", retrieve)
+        for code, message in [
+            (QUIZ[0].solution, "done"),  # correct
+            (QUIZ[1].snippet, "hm"),  # unchanged: nudge
+            (QUIZ[1].snippet + "# x\n", "try"),  # wrong: one model hint
+            ("", "skip"),
+            ("", "stop quiz"),
+        ]:
+            assert (await answer(client, code, message)).status_code == 200
+    assert calls == []
 
 
 async def test_skip_and_stop(quiz_client):

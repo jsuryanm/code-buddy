@@ -97,11 +97,13 @@ Available after a turn whose `meta` had `offer_quiz: true` (the tutor saw the le
 Starts five questions on that bug, two easy, two medium, one hard, from a hand-checked bank, and
 streams question 1: a `meta` with `mode: "quiz"`, `quiz` and `quiz_code`, the question text as
 `token` events (the buggy snippet in a python fence, then "Find the bug, fix it in the code box,
-and send it."), and `done`. No model is called. HTTP 409 (`Nothing to quiz on yet: fix a bug
-first`) before any fix; the API key, rate limit, and learner binding apply as for a turn.
+and send it."), and `done`. No model is called. HTTP 404 (`Nothing to quiz on yet: fix a bug
+first`) before any fix (not 409, which means the session belongs to another learner); the API key, rate limit, and learner binding apply as for a turn.
 
 Answers are ordinary `POST /v1/turn` calls with the fixed code in `code`. A correct answer streams
-"Correct." and the next question in the same reply; a first wrong try gets one level-0 hint; a
+"Correct." and the next question in the same reply; code sent back unchanged gets a short nudge
+("Edit the code in the box to fix the bug, then send it.") and costs no try; a first wrong try
+gets one level-0 hint; a
 second wrong try, or a message with "skip", shows the stored solution and moves on; "stop quiz"
 ends it. After question 5 the reply is a summary such as "you got 4 of 5". See
 [pedagogy-policy.md](pedagogy-policy.md#quiz-after-a-fix).

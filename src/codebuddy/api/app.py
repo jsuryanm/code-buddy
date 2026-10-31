@@ -297,7 +297,7 @@ def create_app(
         d = current()
         progress = await d.sessions.load(req.session_id)
         if progress.quiz_offer not in BANK:
-            raise HTTPException(409, "Nothing to quiz on yet: fix a bug first")
+            raise HTTPException(404, "Nothing to quiz on yet: fix a bug first")
         progress.quiz = new_quiz(progress.quiz_offer)
         progress.last_patterns = []  # quiz code never counts as a fix of the learner's own bug
         progress.hints_given, progress.started_at, progress.repeated_submissions = 0, 0.0, 0
