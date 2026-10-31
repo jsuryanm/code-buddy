@@ -372,7 +372,7 @@ def show_answer_button(chat: dict) -> bool:
         key="show_answer",
         icon=":material/visibility:",
         type="primary" if chat["offer"] else "secondary",
-        help="Available after your first hint. No need to justify, just ask.",
+        help="Available after a few hints, or sooner if the tutor offers it. Just ask.",
     )
 
 
