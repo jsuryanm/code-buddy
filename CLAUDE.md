@@ -20,8 +20,8 @@ Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP too
 
 ## Architecture rules
 
-- **Pedagogy is code, not prompt.** `pedagogy/policy.py` picks the mode (hint ladder 0 to 3, explain, reveal); the LLM only verbalizes. `StreamGuard` blocks corrected code at levels 0 to 3 on the token stream; not in prompts.
-- **Anti-frustration:** Show answer works after the first hint; the answer is offered after 3 hints, a time cap, or frustration; an explicit request reveals.
+- **Pedagogy is code, not prompt.** `pedagogy/policy.py` picks the mode (hint ladder 0 to 3, explain, reveal); the LLM only verbalizes. `StreamGuard` blocks corrected code at levels 0 to 3 on the token stream. Don't move this into prompts.
+- **Anti-frustration:** Show answer works after the first hint; the answer is offered after 3 hints, a time cap, or frustration; an explicit request always reveals.
 - **Tools:** rules choose them, never the model. Learner code execution pauses for approval (`approve_run`). The sandbox (`SandboxBackend` seam) is no security boundary.
 - **LLM:** OpenAI only, no gateway. Task class, then tier (fast, standard, heavy) from env model IDs, then fallback down tiers, then a degraded reply. Never hard-code model IDs.
 - **Memory:** opt-in, private notes only, never read by policy, bypasses answer caches.

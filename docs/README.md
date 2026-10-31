@@ -26,7 +26,7 @@ target design. These docs describe what is built today (slice 1) and say where t
 
 ## Status
 
-Built and tested offline (262 tests, offline eval passing):
+Built and tested offline (268 tests, offline eval passing):
 
 - Pedagogy policy, hint ladder, streaming leak guard, optional sampled LLM judge
 - Static analysis of learner Python (five bug patterns)

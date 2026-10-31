@@ -12,7 +12,7 @@ OpenAPI docs are served at `/docs`.
 | `POST /v1/show-answer` | Learner asks for the full answer. Streams a reveal as SSE |
 | `POST /v1/approve` | Answer a permission request raised by a turn. Streams the rest of that turn |
 | `POST /v1/stt` | Upload recorded audio (multipart field `audio`); returns `{"text", "provider"}` |
-| `GET /v1/session/{id}` | `{"stage", "hints_given", "reveals", "can_show_answer", "run_permission"}`. With memory on and the session bound to a learner, send that learner's token in header `X-Learner-Token`: missing or another learner's token is 409, an invalid one 403 |
+| `GET /v1/session/{id}` | `{"stage", "hints_given", "reveals", "can_show_answer", "run_permission"}`. With memory on and the session bound to a learner, send that learner's token in header `X-Learner-Token`: missing or another learner's token is 409, an invalid one 403. A malformed `X-Learner-Token` header returns 422 |
 | `POST /v1/memory/learners` | Mint a signed learner token for opt-in memory. Returns `{"learner_token"}`. 503 when memory is off |
 | `GET /v1/memory` | List what is remembered for the learner in header `X-Learner-Token`: `{"items": [{"kind", "text", "created_at"}]}` |
 | `DELETE /v1/memory` | Forget everything for the learner in header `X-Learner-Token`: `{"deleted": n}` |
