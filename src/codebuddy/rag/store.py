@@ -1,9 +1,16 @@
 """Qdrant vector store, one collection per corpus (spec 9.3).
 
-Dev uses an embedded index on disk (single process). Set CODEBUDDY_QDRANT_URL for a server.
+Dev uses an embedded index on disk (single process). Set CODEBUDDY_QDRANT_URL (or the Qdrant
+Cloud name QDRANT_CLUSTER_ENDPOINT) and optionally QDRANT_API_KEY for a server. Collections are
+named `<prefix>_<corpus>_<index_version>`; the prefix is QDRANT_COLLECTION_NAME (default `cb`).
 """
 
 from __future__ import annotations
+
+import logging
+import os
+from collections.abc import Sequence
+from urllib.parse import urlparse
 
 from langchain_core.embeddings import Embeddings
 from langchain_qdrant import QdrantVectorStore, RetrievalMode, SparseEmbeddings
@@ -11,20 +18,62 @@ from qdrant_client import QdrantClient, models
 
 from codebuddy.config import Settings
 
+log = logging.getLogger("codebuddy.rag")
+
 DENSE = "dense"
 SPARSE = "sparse"
 KNOWN_CORPORA = ("fundamentals", "pedagogy")
 
 
-def make_client(settings: Settings) -> QdrantClient:
+def qdrant_host(url: str) -> str:
+    """Host only: no key, credentials, path or query ever reach a log line."""
+    parsed = urlparse(url if "//" in url else f"//{url}")
+    return parsed.hostname or "?"
+
+
+def qdrant_target(settings: Settings) -> str:
     if settings.qdrant_url:
-        return QdrantClient(url=settings.qdrant_url)
+        return f"server host={qdrant_host(settings.qdrant_url)}"
+    return f"embedded path={settings.qdrant_path}"
+
+
+def make_client(settings: Settings, corpora: Sequence[str] = ()) -> QdrantClient:
+    """Open the store and log where it points. A server is probed so a bad endpoint or key
+    fails here with a plain message instead of deep inside the first search."""
+    if settings.qdrant_url:
+        names = [collection_name(c, settings) for c in corpora]
+        log.info(
+            "qdrant=server host=%s prefix=%s collections=%s",
+            qdrant_host(settings.qdrant_url),
+            settings.qdrant_collection_prefix,
+            names,
+        )
+        key = settings.qdrant_api_key
+        client = QdrantClient(
+            url=settings.qdrant_url, api_key=key.get_secret_value() if key else None
+        )
+        try:
+            client.get_collections()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Could not reach Qdrant at {qdrant_host(settings.qdrant_url)}: "
+                f"{type(exc).__name__}. Check QDRANT_CLUSTER_ENDPOINT and QDRANT_API_KEY."
+            ) from None
+        return client
+    log.info("qdrant=embedded path=%s", settings.qdrant_path)
+    if settings.qdrant_api_key:
+        log.warning(
+            "QDRANT_API_KEY is set but no endpoint is: using the embedded index. "
+            "Set QDRANT_CLUSTER_ENDPOINT to use a server."
+        )
+    if os.environ.get("QDRANT_CLUSTER_ENDPOINT", None) == "":
+        log.warning("QDRANT_CLUSTER_ENDPOINT is empty: using the embedded index")
     return QdrantClient(path=settings.qdrant_path)
 
 
 def collection_name(corpus: str, settings: Settings) -> str:
     safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in corpus)
-    return f"cb_{safe}_{settings.index_version}"
+    return f"{settings.qdrant_collection_prefix}_{safe}_{settings.index_version}"
 
 
 def get_store(

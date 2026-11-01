@@ -74,7 +74,7 @@ async def build_resources(settings: Settings) -> Resources:
         embeddings = CachedEmbeddings(
             build_embeddings(settings), cache, settings.embed_model, settings.ttl_embedding
         )
-        client = make_client(settings)
+        client = make_client(settings, LEARNER_CORPORA)
         sparse = FastEmbedSparse(model_name="Qdrant/bm25")
         stores = {c: get_store(c, client, embeddings, sparse, settings) for c in LEARNER_CORPORA}
         tiers = build_tiers(settings)

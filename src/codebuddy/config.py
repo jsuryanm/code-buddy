@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="CODEBUDDY_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="CODEBUDDY_",
+        extra="ignore",
+        populate_by_name=True,  # keep Settings(qdrant_url=...) working next to the aliases
+    )
 
     # OpenAI model tiers (required for live use; tests inject fakes)
     model_fast: str | None = None
@@ -36,7 +41,22 @@ class Settings(BaseSettings):
 
     # Vector store: embedded path for dev, URL for a server
     qdrant_path: str = "data/index"
-    qdrant_url: str | None = None
+    # A validation_alias switches off env_prefix for that field, so the prefixed name is listed
+    # first (it wins) and the plain Qdrant Cloud name second.
+    qdrant_url: str | None = Field(
+        None, validation_alias=AliasChoices("CODEBUDDY_QDRANT_URL", "QDRANT_CLUSTER_ENDPOINT")
+    )
+    qdrant_api_key: SecretStr | None = Field(
+        None, validation_alias=AliasChoices("CODEBUDDY_QDRANT_API_KEY", "QDRANT_API_KEY")
+    )
+    # Prefix of every collection name: <prefix>_<corpus>_<index_version>
+    qdrant_collection_prefix: str = Field(
+        "cb",
+        pattern=r"^[A-Za-z0-9_-]+$",
+        validation_alias=AliasChoices(
+            "CODEBUDDY_QDRANT_COLLECTION_PREFIX", "QDRANT_COLLECTION_NAME"
+        ),
+    )
 
     # Retrieval
     retrieve_k: int = 30

@@ -38,6 +38,16 @@ The empty `CUDA_VISIBLE_DEVICES=` keeps Docling's PyTorch off the GPU probe that
 `CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload indexes) that the embedded
 mode cannot exercise, so test it.
 
+## Qdrant Cloud or a managed server
+
+To use a hosted cluster instead of the compose Qdrant, set `QDRANT_CLUSTER_ENDPOINT`,
+`QDRANT_API_KEY` and `QDRANT_COLLECTION_NAME` (collection prefix, default `cb`) in the API's
+environment, and remove or override `CODEBUDDY_QDRANT_URL` (it wins if set). Run ingestion once
+against the cluster, for example
+`docker compose run --rm api python -m codebuddy.rag.ingest /app/data/raw/thinkpython.pdf --corpus fundamentals`;
+the log lines name the target host and collection. Check `/healthz` for `"qdrant": "server"`.
+Learner memory still uses embedded files under `MEMORY_PATH`.
+
 ## Production checklist
 
 - Set `CODEBUDDY_API_KEYS`, and put TLS in front (a proxy or platform load balancer).

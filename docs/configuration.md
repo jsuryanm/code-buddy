@@ -36,7 +36,7 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 
 | Name | Default | Meaning |
 |---|---|---|
-| `INDEX_VERSION` | `v1` | Part of the Qdrant collection name (`cb_<corpus>_<version>`) and of answer and retrieval cache keys. Bump it after re-chunking or changing the embedding model |
+| `INDEX_VERSION` | `v1` | Part of the Qdrant collection name (`<prefix>_<corpus>_<version>`, prefix `cb` by default) and of answer and retrieval cache keys. Bump it after re-chunking or changing the embedding model |
 | `PROMPT_VERSION` | `p5` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
 
 ### Pedagogy
@@ -75,7 +75,9 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | Name | Default | Meaning |
 |---|---|---|
 | `QDRANT_PATH` | `data/index` | Embedded Qdrant storage and `manifest.json`. Single process only |
-| `QDRANT_URL` | none | Use a Qdrant server instead (also creates payload indexes) |
+| `QDRANT_URL` | none | Use a Qdrant server instead (also creates payload indexes). Also read from `QDRANT_CLUSTER_ENDPOINT` (the Qdrant Cloud name, no prefix). If both are set, `CODEBUDDY_QDRANT_URL` wins |
+| `QDRANT_API_KEY` | none | API key for the server. Also read from the plain `QDRANT_API_KEY`; `CODEBUDDY_QDRANT_API_KEY` wins. Held as a secret value: never in `repr`, logs or `/healthz`. Ignored by the embedded index |
+| `QDRANT_COLLECTION_PREFIX` | `cb` | Prefix of every collection name, `<prefix>_<corpus>_<index_version>`. Also read from `QDRANT_COLLECTION_NAME`; the prefixed name wins. Letters, digits, `_` and `-` only. Corpora stay in separate collections, so `pedagogy` stays unreachable from learner turns |
 | `RETRIEVE_K` | `30` | Candidates fetched from hybrid search |
 | `RERANK_TOP` | `5` | Chunks kept after reranking and given to the model |
 | `REFINE_TIMEOUT_S` | `0.5` | How long a turn waits for the second retrieval (the classifier's query). On timeout the first result is kept, `refine_timeouts` in `/v1/metrics` goes up, and the search finishes in the background so it still warms the L3 and L4 caches |
@@ -123,7 +125,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | Name | Default | Meaning |
 |---|---|---|
 | `MEMORY_ENABLED` | `false` | Turn on opt-in long-term learner memory. Needs `OPENAI_API_KEY` and `MODEL_FAST`. See [memory.md](memory.md) |
-| `MEMORY_PATH` | `data/memory` | Embedded Qdrant data and `history.db`. Single process only |
+| `MEMORY_PATH` | `data/memory` | Embedded Qdrant data and `history.db`. Single process only. Memory always uses this local embedded store, never the Qdrant server or key above |
 | `MEMORY_SECRET` | empty | Signs learner tokens. Empty: a random secret per process with a startup warning, so tokens stop working after a restart. Changing it invalidates every token. Held as a secret value, so a `repr` of `Settings` hides it |
 | `MEMORY_RECALL_LIMIT` | `5` | Notes put into a prompt |
 | `MEMORY_RECALL_TIMEOUT_S` | `0.6` | Recall is abandoned after this, and the turn goes on without notes |

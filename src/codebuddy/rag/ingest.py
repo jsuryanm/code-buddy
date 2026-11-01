@@ -143,7 +143,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
 
     load_dotenv()  # SDKs read OPENAI_API_KEY from the environment, not from Settings
 
-    from codebuddy.rag.store import get_store, make_client
+    from codebuddy.rag.store import (
+        collection_name,
+        get_store,
+        make_client,
+        qdrant_target,
+    )
 
     ap = argparse.ArgumentParser(description="Ingest documents into a CodeBuddy corpus")
     ap.add_argument("path", type=Path, help="file or folder")
@@ -163,7 +168,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
     logger.info("config {}", describe_config(settings, embed_model=settings.embed_model))
     started = time.perf_counter()
     try:
-        client = make_client(settings)
+        client = make_client(settings, (args.corpus,))
         store = get_store(
             args.corpus,
             client,
@@ -178,7 +183,12 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
             else sorted(p for p in args.path.rglob("*") if p.suffix.lower() in SUPPORTED)
         )
         logger.info(
-            "ingesting {} file(s) into corpus={} force={}", len(files), args.corpus, args.force
+            "ingesting {} file(s) into corpus={} collection={} target={} force={}",
+            len(files),
+            args.corpus,
+            collection_name(args.corpus, settings),
+            qdrant_target(settings),
+            args.force,
         )
         total = skipped = 0
         for i, f in enumerate(files, 1):
@@ -212,11 +222,14 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
         log_failure("ingestion", exc, started)
         raise
     logger.info(
-        "ingestion finished: {} file(s), {} chunks, {} unchanged, in {:.1f} s",
+        "ingestion finished: {} file(s), {} chunks, {} unchanged, in {:.1f} s, "
+        "collection={} target={}",
         len(files),
         total,
         skipped,
         time.perf_counter() - started,
+        collection_name(args.corpus, settings),
+        qdrant_target(settings),
     )
 
 

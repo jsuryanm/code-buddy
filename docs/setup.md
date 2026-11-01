@@ -118,6 +118,27 @@ uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run   # offline eval, prints PASS
 ```
 
+## Using Qdrant Cloud or a server with an API key
+
+Instead of the embedded index, set three variables in `.env` (the plain Qdrant Cloud names work;
+the `CODEBUDDY_`-prefixed ones win if both are set):
+
+```
+QDRANT_CLUSTER_ENDPOINT=https://<cluster-id>.<region>.cloud.qdrant.io:6333
+QDRANT_API_KEY=<your key>
+QDRANT_COLLECTION_NAME=cb        # prefix of the collection names; default cb
+```
+
+Then ingest once against the cluster (the same settings are used, so this writes to the server):
+
+```bash
+uv run python -m codebuddy.rag.ingest data/raw/thinkpython.pdf --corpus fundamentals
+```
+
+The startup log shows `qdrant=server host=<host> prefix=<prefix> collections=[...]`; an
+unreachable server fails with "Could not reach Qdrant at <host>". `/healthz` reports
+`"qdrant": "server"` or `"embedded"`. Learner memory stays on local embedded files either way.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |

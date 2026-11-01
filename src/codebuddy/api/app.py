@@ -229,6 +229,7 @@ def create_app(
             "stt_configured": getattr(app.state, "speech", None) is not None,
             "tools": {"MCPToolRunner": "mcp", "LocalToolRunner": "local"}.get(tools or "", "off"),
             "sandbox_network_isolated": network_isolated(),
+            "qdrant": "server" if s.qdrant_url else "embedded",
             "memory_enabled": bool(d and d.memory),
             "auth_required": bool(parse_keys(s.api_keys)),
         }

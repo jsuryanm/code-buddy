@@ -23,11 +23,14 @@ can reach twice the limit.
   parties; check their data terms for your learners (minors, institutions).
 - Logs (`logs/`, see [observability.md](observability.md)) hold metadata only: a hash of the
   session ID (first 8 hex characters of its SHA-256), never the raw session ID, message, code,
-  reply, prompt, learner ID or token. The one documented exception is the leak judge's reason
-  text. The access log shows `/v1/session/<id>` instead of the path. Log files are deleted after
+  reply, prompt, learner ID or token (the leak judge's reason text is never logged). The access
+  log shows `/v1/session/<id>` instead of the path. Log files are deleted after
   `CODEBUDDY_LOG_RETENTION_DAYS` (5) days. The leak judge sends the learner's code and the reply to
   OpenAI when sampling is on.
 - `/v1/metrics` exposes counters only.
+- The Qdrant API key (`QDRANT_API_KEY`) is a secret value: it is never in `repr` of settings, logs
+  (only the host is logged), error messages or `/healthz`. Keep it in `.env`, which is not
+  committed.
 
 ### Long-term memory (opt-in)
 

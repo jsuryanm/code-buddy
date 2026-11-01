@@ -4,6 +4,12 @@ Code: `src/codebuddy/rag/`. Design rationale: [../PROJECT_SPEC.md](../PROJECT_SP
 
 ## Corpora
 
+Collection names are `<prefix>_<corpus>_<index_version>`. The prefix is `QDRANT_COLLECTION_NAME`
+(`CODEBUDDY_QDRANT_COLLECTION_PREFIX`), default `cb`, so the names below are the defaults. Each
+corpus keeps its own collection under any prefix, which is what keeps `pedagogy` unreachable
+from learner turns. With a server configured, ingestion writes to it and its log lines name the
+target host and collection.
+
 | Corpus | Collection | Who may read it | Typical content |
 |---|---|---|---|
 | `fundamentals` | `cb_fundamentals_<index_version>` | Learner turns (cited to the learner) | Think Python (338 chunks ingested), Python docs |

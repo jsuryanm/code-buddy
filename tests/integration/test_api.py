@@ -71,4 +71,5 @@ async def test_empty_message_is_rejected_and_health_works(client_for):
         assert (
             await client.post("/v1/turn", json={"session_id": "d", "message": " "})
         ).status_code == 422
-        assert (await client.get("/healthz")).json()["status"] == "ok"
+        health = (await client.get("/healthz")).json()
+        assert health["status"] == "ok" and health["qdrant"] == "embedded"
