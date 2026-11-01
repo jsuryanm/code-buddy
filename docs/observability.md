@@ -164,8 +164,8 @@ the reply, a prompt, a learner id or token, or the raw session id.
   of them appear (`tests/integration/test_logging_flow.py`).
 
 What remains outside that guarantee: exception messages in `.errors.log` tracebacks come from
-libraries (OpenAI, Qdrant, mem0) and could in principle echo request details; the documented
-exception of the leak judge's `reason` text (see [security.md](security.md)) still applies; and
+libraries (OpenAI, Qdrant, mem0) and could in principle echo request details; the leak judge's
+`reason` text is never logged (only the flag, hashed session and level); and
 the access log records client IP addresses.
 
 ## Cost on the hot path

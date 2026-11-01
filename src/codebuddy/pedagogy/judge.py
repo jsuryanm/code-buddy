@@ -64,14 +64,13 @@ async def maybe_judge(
         return None
     try:
         verdict = await judge.check(code=code, reply=reply, level=level)
-    except Exception:
-        log.warning("leak judge failed", exc_info=True)
+    except Exception as exc:
+        log.warning("leak judge failed: %s", type(exc).__name__)
         return None
     await metrics.incr("judge_checked")
     if verdict.leaks_answer:
         await metrics.incr("judge_flagged")
         who = hash_session(session_id)
-        log.warning(
-            "judge flagged a possible leak session=%s level=%s: %s", who, level, verdict.reason
-        )
+        # the reason is free model text that may quote learner code: never logged
+        log.warning("judge flagged a possible leak session=%s level=%s", who, level)
     return verdict

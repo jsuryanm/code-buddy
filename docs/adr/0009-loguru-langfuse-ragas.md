@@ -43,5 +43,5 @@ handles learner text and code, which must not leave the process through logs or 
 - A turn can be followed line by line with `grep turn=<id>`; see `docs/observability.md`.
 - Each log record costs about 90 microseconds on the calling thread with enqueued sinks (measured;
   10 microseconds without `enqueue`), so roughly 1 to 2 ms per turn before the first token.
-- Exception messages from libraries in `.errors.log` tracebacks can still echo request details;
-  the leak judge's reason text remains the documented exception.
+- Exception messages from libraries in `.errors.log` tracebacks can still echo request details.
+  The leak judge logs only the flag, hashed session and level; never its reason text.

@@ -57,3 +57,28 @@ async def test_sampling_respects_the_rate():
 async def test_judge_failure_never_raises():
     verdict, counts = await run(FakeChain(fail=True))
     assert verdict is None and counts["judge_checked"] == 0
+
+
+async def test_judge_text_never_reaches_logs(caplog):
+    from loguru import logger
+
+    sunk: list[str] = []
+    sink_id = logger.add(sunk.append, level="DEBUG", format="{message} {exception}")
+    try:
+        with caplog.at_level("DEBUG"):
+            await run(FakeChain(Verdict(leaks_answer=True, reason="SENTINELREASON learner code")))
+            await run(_Failing("SENTINELPROMPT echoed"))
+    finally:
+        logger.remove(sink_id)
+    records = [r.getMessage() + str(r.exc_info) for r in caplog.records]
+    assert any("possible leak" in m for m in records) and any("RuntimeError" in m for m in records)
+    for text in [*records, *sunk]:
+        assert "SENTINEL" not in text
+
+
+class _Failing:
+    def __init__(self, msg):
+        self.msg = msg
+
+    async def ainvoke(self, messages):
+        raise RuntimeError(self.msg)
