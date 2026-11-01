@@ -54,7 +54,14 @@ mode cannot exercise, so test it.
 - Watch `/v1/metrics`: `degraded` and `rate_limited` rising, `guard_stops` and `judge_flagged`
   for answer-leak trends, `approvals_*` for how learners react to the permission prompt.
 - Set `CODEBUDDY_JUDGE_SAMPLE_RATE` (for example 0.05) to sample hint replies for leaks.
-- Latency: read `ttft_ms` from the API logs or the `done` event; the target is p95 under 1 s.
+- Latency: read `ttft_ms` from the `turn end` and `api done` log lines or the `done` event; the
+  target is p95 under 1 s.
+- Logs: the API writes `/app/logs/YYYY-MM-DD/api_HH-MM-SS.log` (and `.errors.log`). Mount
+  `/app/logs` as a volume (for example `./logs:/app/logs` on the `api` and `ui` services) to keep
+  them across restarts, and make it writable by the container's non-root user; otherwise the app
+  logs one warning and falls back to stderr only. Files older than
+  `CODEBUDDY_LOG_RETENTION_DAYS` (5) are deleted at start. Set `CODEBUDDY_LOG_JSON=true` if a log
+  shipper reads the files. See [observability.md](observability.md).
 
 ## Known gaps
 

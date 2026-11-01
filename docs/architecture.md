@@ -10,6 +10,9 @@ src/codebuddy/
   schemas.py           Enums and models: PcditStage, Intent, HintLevel, Mode, Decision, SessionProgress, API requests
   llm.py               OpenAI tiers via LangChain (fast, standard, heavy) with fallbacks; embeddings
   metrics.py           Cache-backed counters served at /v1/metrics
+  observability/
+    logs.py            setup_logging (loguru sinks, dated files, retention, stdlib bridge), start lines
+    summaries.py       Whitelisted node summaries and hash_session for logs (docs/observability.md)
   pedagogy/
     policy.py          decide_mode(): pure function, picks hint level / explain / reveal / redirect /
                        confirm; fixed_it(): fix detection from the code alone
@@ -23,7 +26,7 @@ src/codebuddy/
     state.py           TutorState (graph state) and Classification (classifier output)
     deps.py            Deps container (including the optional memory); LLMClassifier and offline HeuristicClassifier
     nodes.py           The graph nodes (TutorNodes), including tool planning and approval
-    graph.py           Wires nodes into a LangGraph StateGraph with a checkpointer; run_turn()
+    graph.py           Wires nodes into a LangGraph StateGraph with a checkpointer; logs each node; run_turn()
   tools/
     functions.py       analyze_python, suggest_cases, trace_python
     policy.py          Risk classes and the ask / allow / deny rule
@@ -220,6 +223,10 @@ flowchart LR
 | Memory recall times out or fails | The turn continues without notes; `memory_failures` is counted |
 | Memory write fails | Logged and counted; the learner never sees it |
 | Memory store cannot start | API starts without memory; `/healthz` shows `memory_enabled: false` |
+
+Every one of these leaves a line in the log (`logs/`, see [observability.md](observability.md)):
+the node wrapper records a failing node's exception type, and fallbacks, refusals and tool calls
+have their own lines.
 
 ## State and persistence
 

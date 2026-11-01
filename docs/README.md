@@ -15,6 +15,7 @@ Socratic hints instead of handing out answers, and always lets them reach the fu
 | [ui.md](ui.md) | Use and extend the Streamlit front end, including voice and approvals |
 | [tools-and-approvals.md](tools-and-approvals.md) | Understand the MCP tools, the code sandbox, and the permission prompt |
 | [memory.md](memory.md) | Learn what long-term learner memory stores, its opt-in and privacy limits, and how to enable it |
+| [observability.md](observability.md) | Find and read the logs: one turn line by line, layout, retention, privacy |
 | [security.md](security.md) | Know what is protected, what is not, and what to do before going public |
 | [deployment.md](deployment.md) | Containerize and run it (Dockerfile, compose, CI; untested) |
 | [testing.md](testing.md) | Run tests and the offline eval, and write new tests |
@@ -44,6 +45,7 @@ Built and tested offline (482 tests, offline eval passing):
 - API keys, rate limiting, CORS, counters at `/v1/metrics`
 - Dockerfile, compose file, and CI workflow (written, not run)
 - Offline evals
+- Plain-language logs with loguru in `logs/YYYY-MM-DD/`, metadata only ([observability.md](observability.md))
 
 Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
 (memory uses bearer-like learner tokens instead), Langfuse tracing, a hard sandbox boundary (needs

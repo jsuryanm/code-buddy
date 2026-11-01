@@ -21,8 +21,12 @@ can reach twice the limit.
   2 hours. With Upstash they are stored in your Upstash database; without it, in process memory.
 - Learner code and messages go to OpenAI (chat) and, for voice, audio goes to Groq. Both are third
   parties; check their data terms for your learners (minors, institutions).
-- Logs record a hash of the session ID, never the message or code, except the judge's reason text.
-  The leak judge sends the learner's code and the reply to OpenAI when sampling is on.
+- Logs (`logs/`, see [observability.md](observability.md)) hold metadata only: a hash of the
+  session ID (first 8 hex characters of its SHA-256), never the raw session ID, message, code,
+  reply, prompt, learner ID or token. The one documented exception is the leak judge's reason
+  text. The access log shows `/v1/session/<id>` instead of the path. Log files are deleted after
+  `CODEBUDDY_LOG_RETENTION_DAYS` (5) days. The leak judge sends the learner's code and the reply to
+  OpenAI when sampling is on.
 - `/v1/metrics` exposes counters only.
 
 ### Long-term memory (opt-in)

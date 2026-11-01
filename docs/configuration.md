@@ -130,6 +130,18 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `MEMORY_WRITE_EVERY` | `4` | Write on every Nth hint (minimum 1); a reveal always writes |
 | `MEMORY_EMBEDDING_DIMS` | `1536` | Vector size in the memory store. Must match `EMBED_MODEL`; changing it needs a new `MEMORY_PATH` |
 
+### Logs
+
+See [observability.md](observability.md) for the layout and how to read them.
+
+| Name | Default | Meaning |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Level for stderr, the flow log and the JSON file. `DEBUG` adds node starts and cache layer lines |
+| `LOG_DIR` | `logs` | Root folder. Each process start writes `LOG_DIR/YYYY-MM-DD/<app>_HH-MM-SS.log` and `.errors.log` (local time) |
+| `LOG_TO_FILE` | `true` | `false` logs to stderr only |
+| `LOG_JSON` | `false` | Also write a `.jsonl` file next to the `.log` |
+| `LOG_RETENTION_DAYS` | `5` | At start, log files older than this (by modification time) are deleted and empty day folders removed. Minimum 1 |
+
 ### Cache TTLs (seconds)
 
 | Name | Default | Layer |
@@ -154,6 +166,7 @@ The tutor never reveals on its own; it offers, and the learner decides. See
 | `agent/nodes.py` (memory) | `MEMORY_RECALL_LIMIT`, `MEMORY_RECALL_TIMEOUT_S`, `MEMORY_WRITE_EVERY` |
 | `api/app.py` (memory) | `MEMORY_SECRET` |
 | `rag/ingest.py` and `rag/store.py` | Qdrant location, index version |
+| `observability/logs.py` | `LOG_*`, called first by every entrypoint (API lifespan, demo, UI, ingest, eval, MCP server) |
 
 ## Hard-coded values worth knowing
 

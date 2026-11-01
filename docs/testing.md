@@ -17,6 +17,10 @@ uv run python -m codebuddy.eval.run --json
 
 `pyproject.toml` sets `asyncio_mode = "auto"`, so `async def test_...` just works.
 
+Tests do not write `logs/`: `tests/conftest.py` sets `CODEBUDDY_LOG_TO_FILE=false` (also seen by
+the MCP server child) and removes every loguru sink around each test. Tests that check logs add
+their own sinks and a temporary log folder. `caplog` tests keep using the stdlib loggers.
+
 ## Layout
 
 | Path | Covers |
@@ -48,6 +52,8 @@ uv run python -m codebuddy.eval.run --json
 | `tests/integration/test_quiz_flow.py` | Fix confirmation and ladder reset through the graph; deleted, replaced, or revealed code is not a fix; the quiz offer persists, the reflection is acknowledged, new buggy code or a new problem withdraws it; `/v1/quiz` (404 before a fix, no model call, API key, resends the running question), correct answers, the nudge for unchanged code, different code, the guarded quiz hint, a degraded hint keeps the try, no classifier or retrieval on quiz answers, skip, stop, the `action` field, and the summary |
 | `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz with their actions, the learner's code restored after Stop and after the summary, Show answer from the server's flag only |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
+| `tests/unit/test_observability.py` | `setup_logging`: dated file names, idempotent, JSON optional, stderr-only fallback, stdlib lines bridged and third-party INFO kept out; `prune_logs` with a fake clock (old files and empty day folders go, symlinks and other files stay); access-log path redaction; whitelisted summaries; config summary without secrets; failure hints; tool call lines |
+| `tests/integration/test_logging_flow.py` | Every node logs enter and exit with a duration and the turn and session tags; the sentinel privacy test (no message, code, reply, learner token, learner id or raw session id in any sink or file); the production lifespan sets up logging and injected deps do not |
 
 ## Fakes (no real models)
 

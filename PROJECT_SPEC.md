@@ -198,7 +198,7 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and
 | Evaluation (16) | Offline eval and CI gate built. Human review, A/B tests, and the learner pilot are not |
 | Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved tracking across sessions, Postgres persistence, and accounts are not built. See `docs/memory.md` |
 | Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |
-| Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested). No Langfuse, accounts, or deployment automation |
+| Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested), loguru logs with metadata only (17.4). No Langfuse, accounts, or deployment automation |
 
 ### Key design principle
 
@@ -1286,6 +1286,13 @@ secret manager; no secrets in code.
   rate, frustration-signal rate.
 - Alerts: p95 TTFT breach, provider error spike, cost anomaly, answer-leak detector
   trigger rate, eval drift.
+
+> **Status:** logs are built (loguru, ADR 0009): one flow log per process start in
+> `logs/YYYY-MM-DD/`, a line per graph node with duration and a whitelisted summary, per-turn
+> `ttft_ms` and `total_ms`, tier fallbacks, tool calls and refusals, metadata only, deleted after
+> 5 days (`docs/observability.md`). Langfuse traces, dashboards and alerts are not built yet;
+> Langfuse tracing (metadata only, no LangChain callback handler) and a RAGAS runner are planned in
+> the same change set.
 
 ### 17.5 Cost controls
 

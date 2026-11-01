@@ -30,6 +30,7 @@ Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP too
 - **Corpora split by collection:** `fundamentals` is learner-facing; `pedagogy` (PCDIT) is unreachable to learners.
 - **Checkpoints:** add new graph-state classes to `CHECKPOINT_TYPES` in `agent/graph.py`.
 - **LangChain packages:** no `langchain-classic` without an ADR (`docs/adr/`).
+- **Logs:** loguru via `setup_logging` into `logs/YYYY-MM-DD/`; metadata only, never learner text, code, replies, ids, or raw session ids (whitelist in `observability/summaries.py`).
 
 ## Licences
 
