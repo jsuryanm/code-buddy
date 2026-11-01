@@ -11,6 +11,7 @@ import asyncio
 from dataclasses import dataclass
 
 from langchain_qdrant import QdrantVectorStore
+from loguru import logger
 
 from codebuddy.cache import keys
 from codebuddy.cache.layers import CachedEmbeddings, RetrievalCache
@@ -56,6 +57,12 @@ class Retriever:
         key = keys.retrieval_key(query, corpus, filters or {}, s.index_version)
         if self._cache and (hit := await self._cache.get(key)) is not None:
             chunks = [RetrievedChunk(**c) for c in hit]
+            logger.info(
+                "retrieve corpus={} query_chars={} cache_hit=True chunks={}",
+                corpus,
+                len(query),
+                len(chunks),
+            )
             return RetrievalResult(chunks, self._grounded(chunks), cache_hit=True)
 
         if self._embeddings:
@@ -70,6 +77,17 @@ class Retriever:
             RetrievedChunk(doc.page_content, float(score), doc.metadata) for doc, score in raw
         ]
         chunks = await self._reranker.rerank(query, candidates, s.rerank_top)
+        logger.info(
+            "retrieve corpus={} query_chars={} cache_hit=False k={} candidates={} rerank={} "
+            "top={} chunks={}",
+            corpus,
+            len(query),
+            s.retrieve_k,
+            len(candidates),
+            type(self._reranker).__name__,
+            s.rerank_top,
+            len(chunks),
+        )
         if self._cache:
             await self._cache.put(
                 key, [{"text": c.text, "score": c.score, "meta": c.meta} for c in chunks]

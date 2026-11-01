@@ -234,3 +234,7 @@ graphify-out/cache/
 .superpowers/
 data/memory/
 graphify-out/
+
+# logs (loguru) and RAGAS results
+logs/
+data/eval/

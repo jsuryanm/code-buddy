@@ -10,9 +10,14 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from urllib.parse import urlparse
 
 import streamlit as st
+from loguru import logger
 
+from codebuddy.config import Settings
+from codebuddy.observability.logs import log_start, setup_logging
+from codebuddy.observability.summaries import hash_session
 from codebuddy.ui.client import ApiError, TutorClient
 
 LANGUAGE = "python"
@@ -89,11 +94,25 @@ def new_chat(code: str = "") -> dict:
     }
 
 
+@st.cache_resource
+def ui_logging() -> bool:
+    """Once per process: Streamlit reruns this script on every interaction."""
+    log_start("ui", "the Streamlit UI", setup_logging(Settings(), app="ui"))
+    url = urlparse(os.getenv("CODEBUDDY_API_URL", "http://localhost:8000"))
+    logger.info(
+        "config api_host={} api_key={}",
+        url.hostname,
+        "set" if os.getenv("CODEBUDDY_API_KEY") else "not set",
+    )
+    return True
+
+
 def init_state() -> None:
     ss = st.session_state
     if not ss.get("chats"):
         ss.chats = [new_chat()]
         ss.chat_id = ss.chats[0]["session_id"]
+        logger.bind(sess=hash_session(ss.chat_id)).info("ui session started")
 
 
 def find_chat(session_id: str | None) -> dict | None:
@@ -117,6 +136,7 @@ def start_new_chat(code: str = "") -> dict:
     chat = new_chat(code)
     ss.chats.insert(0, chat)
     ss.chat_id = chat["session_id"]
+    logger.bind(sess=hash_session(chat["session_id"])).info("ui new chat")
     return chat
 
 
@@ -622,6 +642,8 @@ def run_turn(
 
     Returns the error when the call failed, so the caller can decide what to keep.
     """
+    flow = logger.bind(sess=hash_session(chat["session_id"]))
+    flow.info("ui turn sent kind={}", "message" if user_text else "approval")
     if user_text:
         chat["messages"].append({"role": "user", "content": user_text})
         with st.chat_message("user", avatar=AVATARS["user"]):
@@ -630,6 +652,7 @@ def run_turn(
         try:
             result = stream_reply(events())
         except ApiError as exc:
+            flow.warning("ui turn failed status={} reached={}", exc.status, exc.reached)
             if user_text:
                 chat["messages"].pop()
             if exc.status == 409:  # the server holds this session for another learner
@@ -641,6 +664,14 @@ def run_turn(
             st.error(error_text(exc))
             return exc
         render_footer(result["meta"], result["done"])
+    meta = result["meta"] or {}
+    flow.info(
+        "ui turn finished mode={} level={} seconds={} awaiting_approval={}",
+        meta.get("mode"),
+        meta.get("level"),
+        None if result["elapsed"] is None else round(result["elapsed"], 2),
+        result["approval"] is not None,
+    )
     if learner and result["done"] is not None:
         chat["learner"] = learner
     apply_result(chat, result)
@@ -652,6 +683,7 @@ def run_turn(
 
 def main() -> None:
     st.set_page_config(page_title="CodeBuddy", page_icon=":material/school:")
+    ui_logging()
     init_state()
     client = get_client()
     health = client.health()

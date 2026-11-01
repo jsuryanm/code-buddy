@@ -20,9 +20,11 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from langchain_core.embeddings import DeterministicFakeEmbedding
+from loguru import logger
 from qdrant_client import QdrantClient
 
 from codebuddy.agent.code_analysis import analyze
@@ -32,6 +34,7 @@ from codebuddy.cache.layers import AnswerCache, SessionStore
 from codebuddy.cache.memory import InMemoryCache
 from codebuddy.config import Settings
 from codebuddy.llm import Tiers
+from codebuddy.observability.logs import log_failure, log_start, setup_logging
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.pedagogy.quiz import BANK
 from codebuddy.rag.fakes import HashSparse, ScriptedChat
@@ -190,8 +193,24 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument("--json", action="store_true", help="print metrics as JSON")
     args = ap.parse_args(argv)
-    metrics = asyncio.run(evaluate())
+    # Logs go to stderr and logs/; stdout keeps the result lines that CI reads.
+    log_start("eval", "the offline evaluation", setup_logging(Settings(_env_file=None), app="eval"))
+    logger.info("config offline=yes models=scripted embeddings=fake thresholds={}", len(THRESHOLDS))
+    started = time.perf_counter()
+    try:
+        metrics = asyncio.run(evaluate())
+    except Exception as exc:
+        log_failure("evaluation", exc, started)
+        raise
     failures = check(metrics)
+    for name, value in metrics.items():
+        op, limit = THRESHOLDS[name]
+        logger.info("metric {}={:.2f} (need {} {})", name, value, op, limit)
+    logger.info(
+        "evaluation finished: {} in {:.1f} s",
+        "PASS" if not failures else f"FAIL ({len(failures)} metric(s))",
+        time.perf_counter() - started,
+    )
     if args.json:
         print(json.dumps({"metrics": metrics, "failures": failures}, indent=2))
     else:

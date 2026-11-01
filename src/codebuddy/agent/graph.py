@@ -13,18 +13,24 @@ later and no state leaks between turns. Learner progress lives in the session ca
 
 from __future__ import annotations
 
+import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command
+from loguru import logger
 
 from codebuddy.agent.deps import Deps
 from codebuddy.agent.nodes import TutorNodes
 from codebuddy.agent.state import TutorState
+from codebuddy.observability.summaries import format_summary, hash_session, safe_summary
 
 # Types stored in checkpoints. LangGraph will refuse to load unregistered classes.
 CHECKPOINT_TYPES = [
@@ -46,6 +52,38 @@ def checkpoint_serde() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES)
 
 
+def logged(name: str, fn: Callable[[TutorState], Awaitable[dict]]):
+    """Wrap a node so the flow log shows it: `-> name` (DEBUG), then `<- name  ms  summary`
+    (INFO) with a whitelisted summary of its update, or the exception type when it fails.
+    Every line inside the node carries turn= and sess= (a hash of the session id)."""
+
+    async def node(state: TutorState, config: RunnableConfig) -> dict:
+        turn = str((config.get("configurable") or {}).get("thread_id", "-"))[:8]
+        with logger.contextualize(turn=turn, sess=hash_session(state.get("session_id"))):
+            logger.debug("-> {}", name)
+            started = time.perf_counter()
+            try:
+                update = await fn(state)
+            except GraphBubbleUp:  # an approval pause, not an error
+                logger.info("<- {} {:.1f} ms paused", name, (time.perf_counter() - started) * 1e3)
+                raise
+            except Exception as exc:
+                ms = (time.perf_counter() - started) * 1e3
+                logger.info("<- {} {:.1f} ms failed: {}", name, ms, type(exc).__name__)
+                raise
+            ms = (time.perf_counter() - started) * 1e3
+            logger.opt(lazy=True).info(
+                "<- {} {} ms {}",
+                lambda: name,
+                lambda: f"{ms:.1f}",
+                lambda: format_summary(safe_summary(name, update)),
+            )
+            return update
+
+    node.__name__ = name
+    return node
+
+
 def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver | None = None):
     n = TutorNodes(deps)
     g = StateGraph(TutorState)
@@ -64,7 +102,7 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver | None = None):
         "generate": n.generate,
         "update_state": n.update_state,
     }.items():
-        g.add_node(name, fn)
+        g.add_node(name, logged(name, fn))
 
     g.add_edge(START, "load_state")
     g.add_edge("load_state", "analyze_code")
@@ -89,23 +127,60 @@ def new_turn_id() -> str:
     return uuid.uuid4().hex
 
 
-async def run_turn(graph, inputs: Any, thread_id: str | None = None) -> AsyncIterator[dict]:
+async def run_turn(
+    graph, inputs: Any, thread_id: str | None = None, route: str | None = None
+) -> AsyncIterator[dict]:
     """Yield stream events, then one final event.
 
     `inputs` is the turn input dict, or `Command(resume=...)` to continue a paused turn on the
     same `thread_id`. The final event is
     {"type": "final", "state": ..., "interrupt": payload | None, "thread_id": ...}.
+    `route` names the entry point in the flow log (turn, show-answer, approve).
     """
     thread_id = thread_id or new_turn_id()
     config = {"configurable": {"thread_id": thread_id}}
+    resumed = isinstance(inputs, Command)
+    route = route or ("approve" if resumed else "turn")
+    sess = "-" if resumed else hash_session(inputs.get("session_id"))
+    logger.bind(turn=thread_id[:8], sess=sess).info("turn start route={}", route)
+    started = time.perf_counter()
+    first_token_ms: float | None = None
     final: dict = {}
-    async for chunk in graph.astream(
-        inputs, config, stream_mode=["custom", "values"], version="v2"
-    ):
-        if chunk["type"] == "custom":
-            yield chunk["data"]
-        elif chunk["type"] == "values":
-            final = chunk["data"]
-    snapshot = await graph.aget_state(config)
+    try:
+        async for chunk in graph.astream(
+            inputs, config, stream_mode=["custom", "values"], version="v2"
+        ):
+            if chunk["type"] == "custom":
+                if first_token_ms is None and chunk["data"].get("type") == "token":
+                    first_token_ms = (time.perf_counter() - started) * 1e3
+                yield chunk["data"]
+            elif chunk["type"] == "values":
+                final = chunk["data"]
+        snapshot = await graph.aget_state(config)
+    except Exception as exc:
+        logger.bind(turn=thread_id[:8], sess=sess).warning(
+            "turn failed route={} error={}", route, type(exc).__name__
+        )
+        raise
     pending = next((i.value for t in snapshot.tasks for i in t.interrupts), None)
+    _log_turn_end(thread_id, final, pending, started, first_token_ms)
     yield {"type": "final", "state": final, "interrupt": pending, "thread_id": thread_id}
+
+
+def _log_turn_end(
+    thread_id: str, st: dict, pending: Any, started: float, first_token_ms: float | None
+) -> None:
+    total_ms = (time.perf_counter() - started) * 1e3
+    decision = st.get("decision")
+    logger.bind(turn=thread_id[:8], sess=hash_session(st.get("session_id"))).info(
+        "turn end ttft_ms={} total_ms={} mode={} level={} cache_hit={} degraded={} guarded={}"
+        " paused={}",
+        round(first_token_ms) if first_token_ms is not None else None,
+        round(total_ms),
+        decision.mode.value if decision else None,
+        int(decision.level) if decision and decision.level is not None else None,
+        bool(st.get("cache_hit")),
+        bool(st.get("degraded")),
+        bool(st.get("guarded")),
+        bool(pending),
+    )

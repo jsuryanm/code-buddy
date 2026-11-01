@@ -1,9 +1,23 @@
+import os
+
 import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding
+from loguru import logger
 from qdrant_client import QdrantClient
 
 from codebuddy.config import Settings
 from tests.helpers import HashSparse
+
+# Subprocesses started by tests (the MCP server) inherit this, so they never write logs/.
+os.environ["CODEBUDDY_LOG_TO_FILE"] = "false"
+
+
+@pytest.fixture(autouse=True)
+def quiet_loguru():
+    """No loguru sinks in tests: quiet output and no logs/ folder. caplog tests use stdlib."""
+    logger.remove()
+    yield
+    logger.remove()
 
 
 @pytest.fixture

@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     semantic_cache_max: int = 500
     judge_sample_rate: float = 0.0  # share of hint replies re-checked by an LLM judge
 
+    # Logs (loguru, docs/observability.md): metadata only, never learner text
+    log_level: str = "INFO"
+    log_dir: str = "logs"  # logs/YYYY-MM-DD/<app>_HH-MM-SS.log, one set per process start
+    log_to_file: bool = True
+    log_json: bool = False  # also write a .jsonl file next to the .log
+    log_retention_days: int = Field(5, ge=1)  # older files are deleted at start
+
     # Cache TTLs in seconds
     ttl_answer: int = 60 * 60 * 24
     ttl_embedding: int = 60 * 60 * 24 * 30

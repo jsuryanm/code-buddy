@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
+from loguru import logger
 
 from codebuddy.agent.deps import Deps
 from codebuddy.agent.graph import build_graph, new_turn_id, run_turn
@@ -35,6 +36,8 @@ from codebuddy.api.security import (
 from codebuddy.cache import keys
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
+from codebuddy.observability.logs import describe_config, log_failure, log_start, setup_logging
+from codebuddy.observability.summaries import hash_session
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
 from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS
 from codebuddy.pedagogy.quiz import BANK, new_quiz, question_text, quiz_meta
@@ -66,6 +69,7 @@ async def drain_background(tasks: set) -> None:
     """Let outstanding background tasks finish before resources close; cancel stragglers."""
     if not tasks:
         return
+    logger.info("shutdown: waiting for {} background task(s)", len(tasks))
     _, pending = await asyncio.wait(set(tasks), timeout=SHUTDOWN_DRAIN_S)
     for task in pending:
         task.cancel()
@@ -87,18 +91,32 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if getattr(app.state, "graph", None) is None:
-            from codebuddy.api.wiring import build_resources
+            from codebuddy.api import wiring
 
-            res = await build_resources(get_settings())
+            started = time.perf_counter()
+            settings = get_settings()
+            # Production only: injected deps (tests, demo) leave logging to their caller.
+            log_start("api", "the CodeBuddy API", setup_logging(settings, app="api"))
+            try:
+                res = await wiring.build_resources(settings)
+            except Exception as exc:
+                log_failure("API startup", exc, started)
+                await logger.complete()
+                raise
             try:
                 _install(app, res.deps, res.cache_kind, res.speech, res.judge, res.checkpointer)
+                logger.info("API ready in {:.1f} s", time.perf_counter() - started)
                 yield
                 await drain_background(res.deps.background | app.state.background)
             finally:
                 await res.stack.aclose()
+                logger.info("API stopped after {:.0f} s", time.perf_counter() - started)
+                await logger.complete()
         else:
+            started = time.perf_counter()
             yield
             await drain_background(app.state.deps.background | app.state.background)
+            logger.info("API stopped after {:.0f} s", time.perf_counter() - started)
 
     app = FastAPI(title="CodeBuddy", version="0.2.0", lifespan=lifespan)
     app.state.background = set()  # keeps references to fire-and-forget tasks
@@ -118,6 +136,19 @@ def create_app(
                 )
                 secret = secrets.token_bytes(32)
             app.state.tokens = LearnerTokens(secret)
+        tools = {"MCPToolRunner": "mcp", "LocalToolRunner": "inprocess"}
+        logger.info(
+            "config {}",
+            describe_config(
+                d.settings,
+                cache=kind,
+                tools=tools.get(type(d.tools).__name__, "custom") if d.tools else "off",
+                memory="on" if d.memory else "off",
+                stt="on" if stt else "off",
+                judge="on" if jdg else "off",
+                auth="on" if parse_keys(d.settings.api_keys) else "off",
+            ),
+        )
 
     if deps is not None:
         _install(app, deps, cache_kind, speech, judge, checkpointer)
@@ -137,13 +168,19 @@ def create_app(
     async def guard(request: Request) -> str | None:
         """Authenticate, then rate limit. Runs before every /v1 route. Returns the API key."""
         d = current()
-        key = check_api_key(request, d.settings)
-        await enforce_rate_limit(request, d.settings, d.cache, d.metrics, key)
+        try:
+            key = check_api_key(request, d.settings)
+            await enforce_rate_limit(request, d.settings, d.cache, d.metrics, key)
+        except HTTPException as exc:  # the route template, never the path (it can hold an id)
+            route = getattr(request.scope.get("route"), "path", "?")
+            logger.info("request refused status={} route={}", exc.status_code, route)
+            raise
         return key
 
     def verified_learner(token: str, key: str | None) -> str:
         learner_id = app.state.tokens.verify(token, key)
         if learner_id is None:
+            logger.info("request refused status=403 reason=invalid learner token")
             raise HTTPException(403, "Invalid learner token")
         return learner_id
 
@@ -151,6 +188,10 @@ def create_app(
         if bound and not (
             learner_id and secrets.compare_digest(bound.encode(), learner_id.encode())
         ):
+            logger.info(
+                "request refused status=409 reason=session bound to another learner learner={}",
+                "yes" if learner_id else "no",
+            )
             raise HTTPException(409, "This session belongs to another learner")
 
     async def turn_learner(session_id: str, token: str | None, key: str | None) -> str | None:
@@ -167,6 +208,8 @@ def create_app(
                 if learner_id
                 else await d.sessions.owner(session_id)
             )
+            if learner_id and bound == learner_id:
+                logger.bind(sess=hash_session(session_id)).info("session bound to a learner")
         refuse_other_learner(bound, learner_id)
         return learner_id
 
@@ -197,7 +240,7 @@ def create_app(
     # -- streaming -------------------------------------------------------------------
 
     async def emit(
-        events: AsyncIterator[dict], session_id: str, code: str | None
+        events: AsyncIterator[dict], session_id: str, code: str | None, learner: bool
     ) -> AsyncIterator[str]:
         d = current()
         started = time.perf_counter()
@@ -236,7 +279,24 @@ def create_app(
                         "ttft_ms": round(first_token_ms or total_ms),
                         "total_ms": round(total_ms),
                     }
-                    log.info("turn session=%s %s", session_id, done)
+                    logger.bind(turn=turn_id[:8], sess=hash_session(session_id)).info(
+                        "api done ttft_ms={} total_ms={} awaiting_approval={} citations={} "
+                        "degraded={} guarded={} cache_hit={} stage={} hints_given={} learner={}",
+                        done["ttft_ms"],
+                        done["total_ms"],
+                        done["awaiting_approval"],
+                        len(done["citations"]),
+                        done["degraded"],
+                        done["guarded"],
+                        done["cache_hit"],
+                        done["stage"],
+                        done["hints_given"],
+                        "yes" if learner else "no",
+                    )
+                    if pending:
+                        logger.bind(turn=turn_id[:8], sess=hash_session(session_id)).info(
+                            "approval requested tool={}", pending.get("tool")
+                        )
                     yield sse("done", done)
                     if not pending and st.get("reply"):
                         _audit(session_id, code, st["reply"], level)
@@ -262,9 +322,11 @@ def create_app(
 
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
-    def stream_response(events: AsyncIterator[dict], session_id: str, code: str | None):
+    def stream_response(
+        events: AsyncIterator[dict], session_id: str, code: str | None, learner: bool = False
+    ):
         return StreamingResponse(
-            emit(events, session_id, code), media_type="text/event-stream", headers=headers
+            emit(events, session_id, code, learner), media_type="text/event-stream", headers=headers
         )
 
     def turn_events(
@@ -274,13 +336,14 @@ def create_app(
         language: str,
         learner_id: str | None,
         action: str | None = None,
+        route: str = "turn",
     ):
         inputs = {"session_id": session_id, "message": message, "code": code, "language": language}
         if learner_id:
             inputs["learner_id"] = learner_id
         if action:
             inputs["action"] = action
-        return run_turn(app.state.graph, inputs, new_turn_id())
+        return run_turn(app.state.graph, inputs, new_turn_id(), route)
 
     @app.post("/v1/turn")
     async def turn(req: TurnRequest, key: str | None = Depends(guard)):
@@ -290,24 +353,30 @@ def create_app(
         events = turn_events(
             req.session_id, req.message, req.code, req.language, learner_id, req.action
         )
-        return stream_response(events, req.session_id, req.code)
+        return stream_response(events, req.session_id, req.code, bool(learner_id))
 
     @app.post("/v1/show-answer")
     async def show_answer(req: ShowAnswerRequest, key: str | None = Depends(guard)):
         learner_id = await turn_learner(req.session_id, req.learner_id, key)
         events = turn_events(
-            req.session_id, SHOW_ANSWER_MESSAGE, req.code, req.language, learner_id
+            req.session_id,
+            SHOW_ANSWER_MESSAGE,
+            req.code,
+            req.language,
+            learner_id,
+            route="show-answer",
         )
-        return stream_response(events, req.session_id, req.code)
+        return stream_response(events, req.session_id, req.code, bool(learner_id))
 
     @app.post("/v1/quiz")
     async def quiz(req: QuizRequest, key: str | None = Depends(guard)):
         """Start a five-question quiz on the bug the learner just fixed. Written by code from
         the hand-checked bank in pedagogy/quiz.py: no model call. Answers come in as turns.
         While a quiz runs, this sends the current question again instead of restarting."""
-        await turn_learner(req.session_id, req.learner_id, key)
+        learner_id = await turn_learner(req.session_id, req.learner_id, key)
         d = current()
         progress = await d.sessions.load(req.session_id)
+        started = progress.quiz is None
         if progress.quiz is None:
             if progress.quiz_offer not in BANK:
                 raise HTTPException(404, "Nothing to quiz on yet: fix a bug first")
@@ -326,6 +395,12 @@ def create_app(
         await d.sessions.save(progress)
         decision = Decision(mode=Mode.QUIZ, quiz=quiz_meta(progress.quiz))
         snippet = current_item(progress.quiz).snippet
+        logger.bind(sess=hash_session(req.session_id)).info(
+            "quiz {} pattern={} index={}",
+            "start" if started else "resend",
+            progress.quiz["pattern"],
+            progress.quiz["index"],
+        )
 
         async def events() -> AsyncIterator[dict]:
             yield TutorNodes._meta(decision, progress.stage.value, quiz_code=snippet)
@@ -333,7 +408,7 @@ def create_app(
             state = {"progress": progress}  # no "reply": the leak judge has nothing to audit
             yield {"type": "final", "state": state, "interrupt": None, "thread_id": new_turn_id()}
 
-        return stream_response(events(), req.session_id, None)
+        return stream_response(events(), req.session_id, None, bool(learner_id))
 
     @app.post("/v1/approve", dependencies=[Depends(guard)])
     async def approve(req: ApproveRequest):
@@ -341,6 +416,9 @@ def create_app(
         if not await app.state.pending.take(req.turn_id, req.session_id):
             raise HTTPException(404, "No pending approval for this session and turn")
         await current().metrics.incr("approvals_granted" if req.approve else "approvals_declined")
+        logger.bind(turn=req.turn_id[:8], sess=hash_session(req.session_id)).info(
+            "approval {} remember={}", "granted" if req.approve else "declined", req.remember
+        )
         command = Command(resume={"approve": req.approve, "remember": req.remember})
         return stream_response(
             run_turn(app.state.graph, command, req.turn_id), req.session_id, None

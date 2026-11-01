@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import random
 
 from pydantic import BaseModel, Field
 
 from codebuddy.metrics import Metrics
+from codebuddy.observability.summaries import hash_session
 
 log = logging.getLogger("codebuddy.judge")
 
@@ -70,7 +70,7 @@ async def maybe_judge(
     await metrics.incr("judge_checked")
     if verdict.leaks_answer:
         await metrics.incr("judge_flagged")
-        who = hashlib.sha256(session_id.encode()).hexdigest()[:8]
+        who = hash_session(session_id)
         log.warning(
             "judge flagged a possible leak session=%s level=%s: %s", who, level, verdict.reason
         )

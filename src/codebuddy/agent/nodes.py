@@ -14,6 +14,7 @@ import logging
 
 from langgraph.config import get_stream_writer
 from langgraph.types import interrupt
+from loguru import logger
 
 from codebuddy.agent.code_analysis import PATTERNS, analyze
 from codebuddy.agent.deps import Deps
@@ -163,14 +164,17 @@ class TutorNodes:
             model_id=s.model_standard or "",
         )
         hit = await self.d.answers.get(key)
+        logger.debug("cache L1 {}", "hit" if hit else "miss")
         if hit is None:
             hit = await self._semantic_lookup(state["message"])
+            logger.debug("cache L2 {}", "hit" if hit else "miss")
         locked = False
         if hit is None:
             if await self.d.answers.try_lock(key):
                 locked = True
             else:
                 hit = await self.d.answers.wait_for(key, LOCK_WAIT_SECONDS)
+                logger.debug("cache waited for another turn: {}", "hit" if hit else "miss")
         if hit:
             await self.d.metrics.incr("cache_hits")
             return {
@@ -267,6 +271,7 @@ class TutorNodes:
             emit_step(writer, "recall_memory", "done")
             return {"memories": []}
         await self.d.metrics.incr("memory_recalls")
+        logger.info("memory recall items={}", len(items))
         emit_step(writer, "recall_memory", "done")
         return {"memories": items}
 
@@ -537,6 +542,7 @@ class TutorNodes:
             # reply moves down a tier. Logs carry metadata only, never prompt or learner text.
             for i, (tier, model) in enumerate(self.d.tiers.chain(self._tier(decision))):
                 if i:
+                    logger.info("generate falling back to tier={}", tier)
                     await self.d.metrics.incr("tier_fallbacks")
                 # A reasoning model can spend the whole cap on hidden reasoning, so the mode's
                 # own tier gets one retry with more headroom.
@@ -546,12 +552,20 @@ class TutorNodes:
                     try:
                         last = await attempt(model, cap)
                     except LeakDetected:
+                        logger.info(
+                            "generate tier={} cap={} -> stopped by the leak guard", tier, cap
+                        )
                         raise
                     except Exception as exc:
                         error = exc
+                        logger.info(
+                            "generate tier={} cap={} -> error {}", tier, cap, type(exc).__name__
+                        )
                         break
                     if parts:
+                        logger.info("generate tier={} cap={} -> ok", tier, cap)
                         break
+                    logger.info("generate tier={} cap={} -> empty", tier, cap)
                     await self.d.metrics.incr("empty_replies")
                 if parts and error is None:
                     break
@@ -573,7 +587,8 @@ class TutorNodes:
             if not parts or error is not None:
                 degraded = True
         except LeakDetected as leak:
-            log.info("leak guard stopped a reply: %s", leak.reason)
+            # The kind only ("code statement"): the reason also quotes the reply.
+            log.info("leak guard stopped a reply: %s", leak.reason.split(":", 1)[0])
             guarded = True
             await self.d.metrics.incr("guard_stops")
             concept = cls.concepts[0] if cls and cls.concepts else None
@@ -628,6 +643,7 @@ class TutorNodes:
         if forgot:
             # Turns from before Forget me stay in the session; never write them again.
             history = [h for h in history if float(h.get("at", 0)) > float(forgot)]
+        logger.info("memory write scheduled")
         self.d.spawn(self._write_memory(learner_id, history, episode, since))
 
     async def _write_memory(
@@ -639,6 +655,7 @@ class TutorNodes:
             log.warning("memory write failed (%s)", type(exc).__name__)
             await self.d.metrics.incr("memory_failures")
         else:
+            logger.info("memory write ok turns={} outcome={}", len(history) // 2, episode.outcome)
             await self.d.metrics.incr("memory_writes")
 
     async def update_state(self, state: TutorState) -> dict:

@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import argparse
 import re
+import time
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
 from langchain_core.documents import Document
 from langchain_qdrant import QdrantVectorStore
+from loguru import logger
 
 from codebuddy.config import Settings, get_settings
+from codebuddy.observability.logs import describe_config, log_failure, log_start, setup_logging
 from codebuddy.rag.chunking import chunk_markdown
 from codebuddy.rag.manifest import Manifest, ManifestEntry, file_sha256
 
@@ -156,35 +159,65 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
         ap.error(f"no such file or folder: {args.path}")
 
     settings = get_settings()
-    client = make_client(settings)
-    store = get_store(
-        args.corpus,
-        client,
-        OpenAIEmbeddings(model=settings.embed_model),
-        FastEmbedSparse(model_name="Qdrant/bm25"),
-        settings,
-    )
-    manifest = Manifest(Path(settings.qdrant_path) / "manifest.json")
-    files = (
-        [args.path]
-        if args.path.is_file()
-        else sorted(p for p in args.path.rglob("*") if p.suffix.lower() in SUPPORTED)
-    )
-    for f in files:
-        n = ingest_file(
-            f,
-            corpus=args.corpus,
-            store=store,
-            manifest=manifest,
-            settings=settings,
-            title=args.title if len(files) == 1 else None,
-            licence=args.licence,
-            language=args.language,
-            difficulty=args.difficulty,
-            pcdit_stage=args.pcdit_stage,
-            force=args.force,
+    log_start("ingest", "corpus ingestion", setup_logging(settings, app="ingest"))
+    logger.info("config {}", describe_config(settings, embed_model=settings.embed_model))
+    started = time.perf_counter()
+    try:
+        client = make_client(settings)
+        store = get_store(
+            args.corpus,
+            client,
+            OpenAIEmbeddings(model=settings.embed_model),
+            FastEmbedSparse(model_name="Qdrant/bm25"),
+            settings,
         )
-        print(f"{f}: {n} chunks" if n else f"{f}: unchanged, skipped")
+        manifest = Manifest(Path(settings.qdrant_path) / "manifest.json")
+        files = (
+            [args.path]
+            if args.path.is_file()
+            else sorted(p for p in args.path.rglob("*") if p.suffix.lower() in SUPPORTED)
+        )
+        logger.info(
+            "ingesting {} file(s) into corpus={} force={}", len(files), args.corpus, args.force
+        )
+        total = skipped = 0
+        for i, f in enumerate(files, 1):
+            t0 = time.perf_counter()
+            n = ingest_file(
+                f,
+                corpus=args.corpus,
+                store=store,
+                manifest=manifest,
+                settings=settings,
+                title=args.title if len(files) == 1 else None,
+                licence=args.licence,
+                language=args.language,
+                difficulty=args.difficulty,
+                pcdit_stage=args.pcdit_stage,
+                force=args.force,
+            )
+            total += n
+            skipped += not n
+            logger.info(
+                "file {}/{} {} corpus={} {} in {:.1f} s",
+                i,
+                len(files),
+                f.name,
+                args.corpus,
+                f"{n} chunks" if n else "unchanged, skipped",
+                time.perf_counter() - t0,
+            )
+            print(f"{f}: {n} chunks" if n else f"{f}: unchanged, skipped")
+    except Exception as exc:
+        log_failure("ingestion", exc, started)
+        raise
+    logger.info(
+        "ingestion finished: {} file(s), {} chunks, {} unchanged, in {:.1f} s",
+        len(files),
+        total,
+        skipped,
+        time.perf_counter() - started,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

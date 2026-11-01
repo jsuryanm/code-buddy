@@ -23,6 +23,7 @@ from codebuddy.cache.memory import InMemoryCache
 from codebuddy.config import Settings
 from codebuddy.llm import Tiers
 from codebuddy.memory.store import InMemoryLearnerMemory
+from codebuddy.observability.logs import log_start, setup_logging
 from codebuddy.rag.fakes import HashSparse
 from codebuddy.rag.ingest import ingest_file
 from codebuddy.rag.manifest import Manifest
@@ -128,4 +129,6 @@ def build_demo_deps() -> Deps:
     )
 
 
+# CODEBUDDY_LOG_* come from the process environment; the demo never reads .env.
+log_start("demo", "the keyless demo API", setup_logging(Settings(_env_file=None), app="demo"))
 app = create_app(build_demo_deps(), cache_kind="demo (in-memory)", speech=DemoSpeech())
