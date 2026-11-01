@@ -216,7 +216,6 @@ def describe_config(settings: Settings, **extra: object) -> str:
         "prompt": s.prompt_version,
         "memory": "on" if s.memory_enabled else "off",
         "tools": ("mcp" if s.mcp_enabled else "inprocess") if s.tools_enabled else "off",
-        "tracing": "off",
         **extra,
     }
     return " ".join(f"{k}={v}" for k, v in parts.items())

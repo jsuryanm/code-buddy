@@ -23,6 +23,7 @@ from codebuddy.agent.steps import emit_step, short_title
 from codebuddy.cache import keys
 from codebuddy.cache.layers import CachedAnswer, is_answer_cacheable
 from codebuddy.memory.types import Episode
+from codebuddy.observability import tracing
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
 from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS, decide_mode, fixed_it, shape
@@ -52,6 +53,20 @@ def _text(chunk) -> str:
     if isinstance(content, str):
         return content
     return "".join(p.get("text", "") for p in content if isinstance(p, dict))
+
+
+def _usage(chunk) -> dict:
+    """Token counts and finish reason from a streamed chunk, for the trace (numbers only)."""
+    out: dict = {}
+    if usage := getattr(chunk, "usage_metadata", None):
+        out["usage"] = {
+            k: int(usage[v])
+            for k, v in (("input", "input_tokens"), ("output", "output_tokens"))
+            if isinstance(usage.get(v), int)
+        }
+    if reason := (getattr(chunk, "response_metadata", None) or {}).get("finish_reason"):
+        out["finish_reason"] = str(reason)[:40]
+    return out
 
 
 def submission_hash(code: str) -> str:
@@ -421,13 +436,16 @@ class TutorNodes:
         for name in state.get("tool_plan") or []:
             if decide_permission(name, state["progress"].run_permission) != "run":
                 continue
-            try:
-                result = await asyncio.wait_for(
-                    self.d.tools.call(name, code=state["code"]), timeout=timeout
-                )
-            except Exception:
-                log.warning("tool %s failed", name, exc_info=True)
-                continue
+            with tracing.span(f"tool:{name}") as span:
+                try:
+                    result = await asyncio.wait_for(
+                        self.d.tools.call(name, code=state["code"]), timeout=timeout
+                    )
+                except Exception as exc:
+                    span.update(ok=False, error=type(exc).__name__)
+                    log.warning("tool %s failed", name, exc_info=True)
+                    continue
+                span.update(ok=True)
             ran = True
             await self.d.metrics.incr("tool_runs")
             if name == "trace_python":
@@ -523,14 +541,17 @@ class TutorNodes:
                 parts.append(text)
                 writer({"type": "token", "text": text})
 
-        async def attempt(model, max_tokens: int) -> object | None:
-            """Stream one call through a fresh guard; return the last chunk (for diagnostics)."""
+        async def attempt(model, max_tokens: int, gen: tracing.Observation) -> object | None:
+            """Stream one call through a fresh guard; return the last chunk (for diagnostics).
+            The trace gets token usage and the finish reason, never the text."""
             guard = StreamGuard(
                 enforce=enforce, allow_pseudocode=decision.level is HintLevel.SCAFFOLD
             )
             last = None
             async for chunk in model.astream(messages, max_completion_tokens=max_tokens):
                 last = chunk
+                if gen.recording:
+                    gen.update(**_usage(chunk))
                 emit(guard.feed(_text(chunk)))
             emit(guard.flush())
             return last
@@ -548,20 +569,28 @@ class TutorNodes:
                 # own tier gets one retry with more headroom.
                 caps = [base, min(base * 4, 4000)] if i == 0 else [base]
                 last = error = None
+                model_id = getattr(self.d.settings, f"model_{tier}", None)
                 for cap in caps:
-                    try:
-                        last = await attempt(model, cap)
-                    except LeakDetected:
-                        logger.info(
-                            "generate tier={} cap={} -> stopped by the leak guard", tier, cap
-                        )
-                        raise
-                    except Exception as exc:
-                        error = exc
-                        logger.info(
-                            "generate tier={} cap={} -> error {}", tier, cap, type(exc).__name__
-                        )
-                        break
+                    with tracing.generation("generate", model=model_id, tier=tier, cap=cap) as gen:
+                        try:
+                            last = await attempt(model, cap, gen)
+                        except LeakDetected:
+                            gen.update(outcome="guarded")
+                            logger.info(
+                                "generate tier={} cap={} -> stopped by the leak guard", tier, cap
+                            )
+                            raise
+                        except Exception as exc:
+                            error = exc
+                            gen.update(outcome="error", error=type(exc).__name__)
+                            logger.info(
+                                "generate tier={} cap={} -> error {}",
+                                tier,
+                                cap,
+                                type(exc).__name__,
+                            )
+                            break
+                        gen.update(outcome="ok" if parts else "empty")
                     if parts:
                         logger.info("generate tier={} cap={} -> ok", tier, cap)
                         break

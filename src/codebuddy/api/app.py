@@ -36,6 +36,7 @@ from codebuddy.api.security import (
 from codebuddy.cache import keys
 from codebuddy.config import Settings, get_settings
 from codebuddy.memory.store import LearnerMemory
+from codebuddy.observability import tracing
 from codebuddy.observability.logs import describe_config, log_failure, log_start, setup_logging
 from codebuddy.observability.summaries import hash_session
 from codebuddy.pedagogy.judge import LeakJudge, maybe_judge
@@ -108,6 +109,7 @@ def create_app(
                 logger.info("API ready in {:.1f} s", time.perf_counter() - started)
                 yield
                 await drain_background(res.deps.background | app.state.background)
+                await tracing.close(res.deps.tracer)  # after the drain: its spans go too
             finally:
                 await res.stack.aclose()
                 logger.info("API stopped after {:.0f} s", time.perf_counter() - started)
@@ -116,6 +118,7 @@ def create_app(
             started = time.perf_counter()
             yield
             await drain_background(app.state.deps.background | app.state.background)
+            await tracing.close(app.state.deps.tracer)
             logger.info("API stopped after {:.0f} s", time.perf_counter() - started)
 
     app = FastAPI(title="CodeBuddy", version="0.2.0", lifespan=lifespan)
@@ -147,6 +150,7 @@ def create_app(
                 stt="on" if stt else "off",
                 judge="on" if jdg else "off",
                 auth="on" if parse_keys(d.settings.api_keys) else "off",
+                tracing="on" if d.tracer.enabled else "off",
             ),
         )
 
@@ -232,6 +236,7 @@ def create_app(
             "qdrant": "server" if s.qdrant_url else "embedded",
             "memory_enabled": bool(d and d.memory),
             "auth_required": bool(parse_keys(s.api_keys)),
+            "tracing_enabled": bool(d and d.tracer.enabled),
         }
 
     @app.get("/v1/metrics", dependencies=[Depends(guard)])

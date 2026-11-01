@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     log_json: bool = False  # also write a .jsonl file next to the .log
     log_retention_days: int = Field(5, ge=1)  # older files are deleted at start
 
+    # Langfuse tracing (metadata only); needs LANGFUSE_PUBLIC_KEY/SECRET_KEY and --extra trace
+    tracing_enabled: bool = True
+    trace_sample_rate: float = Field(1.0, ge=0.0, le=1.0)
+
     # Cache TTLs in seconds
     ttl_answer: int = 60 * 60 * 24
     ttl_embedding: int = 60 * 60 * 24 * 30

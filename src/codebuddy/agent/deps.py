@@ -19,6 +19,8 @@ from codebuddy.config import Settings
 from codebuddy.llm import Tiers
 from codebuddy.memory.store import LearnerMemory
 from codebuddy.metrics import Metrics
+from codebuddy.observability import tracing
+from codebuddy.observability.tracing import NoopTracer, Tracer
 from codebuddy.pedagogy.frustration import asks_for_answer
 from codebuddy.rag.retrieve import Retriever
 from codebuddy.schemas import Intent, PcditStage, SessionProgress
@@ -58,6 +60,7 @@ class LLMClassifier:
 
     def __init__(self, fast_model):
         self._chain = fast_model.with_structured_output(Classification)
+        self._model_id = getattr(fast_model, "model_name", None)  # for the trace only
 
     async def classify(
         self, message: str, code: str | None, progress: SessionProgress
@@ -75,12 +78,15 @@ class LLMClassifier:
             f"Stage so far: {progress.stage.value}\nCode attached: {bool(code)}\n"
             f"{earlier}<message>\n{message}\n</message>"
         )
-        try:
-            result = await self._chain.ainvoke([("system", CLASSIFY_PROMPT), ("human", user)])
-            return Classification.model_validate(result)
-        except Exception:
-            log.warning("classifier failed, using heuristic", exc_info=True)
-            return heuristic_classification(message, code, progress)
+        with tracing.generation("classifier", model=self._model_id, tier="fast") as gen:
+            try:
+                result = await self._chain.ainvoke([("system", CLASSIFY_PROMPT), ("human", user)])
+                gen.update(outcome="ok")
+                return Classification.model_validate(result)
+            except Exception as exc:
+                gen.update(outcome="error", error=type(exc).__name__)
+                log.warning("classifier failed, using heuristic", exc_info=True)
+                return heuristic_classification(message, code, progress)
 
 
 def heuristic_classification(
@@ -122,6 +128,7 @@ class Deps:
     cache: Cache = field(default_factory=InMemoryCache)  # rate limits and pending approvals
     memory: LearnerMemory | None = None  # None disables long-term learner memory
     background: set = field(default_factory=set)  # keeps references to fire-and-forget tasks
+    tracer: Tracer = field(default_factory=NoopTracer)  # Langfuse when configured; metadata only
 
     def spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
         task = asyncio.create_task(coro)

@@ -25,6 +25,7 @@ from codebuddy.config import Settings
 from codebuddy.llm import build_embeddings, build_tiers
 from codebuddy.memory.mem0_store import Mem0LearnerMemory
 from codebuddy.metrics import Metrics
+from codebuddy.observability.tracing import build_tracer
 from codebuddy.pedagogy.judge import LeakJudge
 from codebuddy.rag.rerank import CrossEncoderReranker, NoopReranker
 from codebuddy.rag.retrieve import Retriever
@@ -115,6 +116,7 @@ async def build_resources(settings: Settings) -> Resources:
             ),
             cache=cache,
             memory=await build_memory(settings),
+            tracer=build_tracer(settings),  # reads LANGFUSE_* from the environment
         )
         judge = LeakJudge.from_model(tiers.fast_base) if settings.judge_sample_rate > 0 else None
         return Resources(deps, cache_kind, build_speech_to_text(settings), judge, saver, stack)
