@@ -1,0 +1,20 @@
+{"question": "What does a loop do?", "reference": "A loop repeats a block of code.", "expected_section": "Loops"}
+{"question": "How does a for loop work?", "reference": "A for loop walks over the items of a sequence, one at a time. The loop variable takes each value in turn.", "expected_section": "Loops"}
+{"question": "What value does the loop variable hold in a for loop?", "reference": "The loop variable takes each value of the sequence in turn, one at a time.", "expected_section": "Loops"}
+{"question": "When does a for loop stop?", "reference": "After the last item of the sequence the loop ends by itself.", "expected_section": "Loops"}
+{"question": "What numbers does range(stop) produce?", "reference": "range(stop) produces the numbers 0 up to, but not including, stop.", "expected_section": "Counting with range"}
+{"question": "What does range(3) give?", "reference": "range(3) gives 0, 1, 2.", "expected_section": "Counting with range"}
+{"question": "Is the stop value included in range(stop)?", "reference": "No. range(stop) goes from 0 up to, but not including, stop.", "expected_section": "Counting with range"}
+{"question": "What is an off-by-one error?", "reference": "An off-by-one error is the common mistake of going one step too far, for example when counting with range.", "expected_section": "Counting with range"}
+{"question": "Which indexes are valid for a list with n items?", "reference": "The indexes of a list with n items run from 0 to n - 1.", "expected_section": "Counting with range"}
+{"question": "What is an accumulator?", "reference": "An accumulator is a variable that collects a result while a loop runs, such as a running total.", "expected_section": "Accumulators"}
+{"question": "When must an accumulator get its starting value?", "reference": "An accumulator must be given a starting value before the loop.", "expected_section": "Accumulators"}
+{"question": "What starting value does an accumulator for a sum need?", "reference": "For a sum, the starting value of the accumulator is 0.", "expected_section": "Accumulators"}
+{"question": "How do you add up the numbers of a list with an accumulator?", "reference": "Start with total = 0 before the loop, then for each number n in the list set total = total + n.", "expected_section": "Accumulators"}
+{"question": "How can I debug an off-by-one error?", "reference": "Trace the loop by hand with a tiny list. Write down the loop variable on every pass, especially the first and the last, and compare the last value with the largest valid index.", "expected_section": "Debugging an off-by-one error"}
+{"question": "Which passes of a loop matter most when tracing it by hand?", "reference": "The first and the last pass; write down the loop variable on every pass, especially those two.", "expected_section": "Debugging an off-by-one error"}
+{"question": "When tracing a loop, what should the last value be compared with?", "reference": "Compare the last value of the loop variable with the largest valid index.", "expected_section": "Debugging an off-by-one error"}
+{"question": "What kind of list should I use to trace a loop by hand?", "reference": "Use a tiny list when tracing a loop by hand.", "expected_section": "Debugging an off-by-one error"}
+{"question": "What is a recursive function?", "reference": "A recursive function is a function that calls itself on a smaller input.", "expected_section": "Recursion"}
+{"question": "What is a base case in recursion?", "reference": "A base case is an input for which the recursive function returns an answer without calling itself.", "expected_section": "Recursion"}
+{"question": "What happens if a recursive function has no base case?", "reference": "Without a base case the calls never stop.", "expected_section": "Recursion"}

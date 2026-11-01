@@ -46,6 +46,7 @@ MAX_CODE = 8000
 HISTORY_TURNS = 6
 HISTORY_CHARS = 500
 LOCK_WAIT_SECONDS = 1.5
+PASSAGE_CHARS = 1200  # of each retrieved passage given to the prompt (eval/ragas_run.py too)
 
 
 def _text(chunk) -> str:
@@ -507,7 +508,7 @@ class TutorNodes:
             writer({"type": "token", "text": scripted})  # quiz text written by code, no model
             return {"reply": scripted, "citations": [], "guarded": False, "degraded": False}
 
-        context = [(i + 1, c.text[:1200]) for i, c in enumerate(retrieval.chunks)]
+        context = [(i + 1, c.text[:PASSAGE_CHARS]) for i, c in enumerate(retrieval.chunks)]
         findings: list[str] = []
         if features:
             findings += [f"{PATTERNS[p].id}: {PATTERNS[p].symptom}" for p in features.patterns]

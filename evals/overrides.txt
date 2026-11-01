@@ -1,0 +1,6 @@
+# Upper bounds lifted so the evals environment keeps the main lock's versions (openai 3.41
+# needs jiter >= 0.16). instructor (via ragas) caps jiter < 0.15 and rich < 15; datasets caps
+# fsspec <= 2026.7.0. Checked by importing ragas and building its metrics, not by a live run.
+jiter>=0.16,<1
+rich>=13.7,<16
+fsspec[http]>=2023.1.0

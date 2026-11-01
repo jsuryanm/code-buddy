@@ -1,0 +1,5 @@
+# The RAGAS runner's extra packages (docs/evaluation.md). Installed by evals/setup.sh into
+# .venv-evals on top of the versions in uv.lock, never into the main environment.
+ragas==0.4.3
+# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in 0.4.2.
+langchain-community==0.4.1
