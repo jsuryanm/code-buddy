@@ -1,6 +1,6 @@
 # 0009. Logs with loguru, traces with Langfuse, RAG scores with RAGAS
 
-Status: accepted for logs (built); Langfuse tracing and the RAGAS runner are planned in this change
+Status: accepted. Logs and Langfuse tracing are built; the RAGAS runner is planned in this change
 set and not built yet. Date: 2026-11-02.
 
 ## Context
@@ -20,11 +20,17 @@ handles learner text and code, which must not leave the process through logs or 
   sinks. One wrapper around every graph node logs its duration and a summary from a per-node
   whitelist; unknown keys are dropped, never stringified. Session ids are hashed (8 hex of
   SHA-256). Sinks use `enqueue=True` and `diagnose=False`.
-- **Traces (planned).** Langfuse cloud, SDK v4, behind our own small `Tracer` protocol fed by the
-  same whitelisted summaries: span names, durations, mode, level, tier, token usage, cache hits,
-  source titles, scores. **No LangChain `CallbackHandler` on the tutor graph**, because it records
-  prompts and completions, and Langfuse's `mask` does not cover third-party spans. Off without
-  keys; failures never break a turn.
+- **Traces (built).** Langfuse cloud, SDK v4 (4.18, optional extra `trace`), behind our own small
+  `Tracer` protocol (`observability/tracing.py`) fed by the same whitelisted summaries: span names,
+  durations, mode, level, tier, token usage, cache hits, source titles, scores. **No LangChain
+  `CallbackHandler` on the tutor graph**, because it records prompts and completions, and
+  Langfuse's `mask` does not cover third-party spans. No observation gets an input or output; the
+  session id is the 8-char hash; the client exports only Langfuse's own spans
+  (`should_export_span=is_langfuse_span`). Child observations are created from their parent
+  (`start_observation`), not from the OpenTelemetry current context, because `run_turn` is an
+  async generator and LangGraph runs nodes in separate tasks. Off without keys, with
+  `CODEBUDDY_TRACING_ENABLED=false`, or without the extra; every tracer call is wrapped so
+  failures never break a turn.
 - **RAG evaluation (planned).** A separate, manual, paid runner (`eval/ragas_run.py`) scores the
   real graph on a golden set with RAGAS (faithfulness, response relevancy, context precision and
   recall) and pushes scores to Langfuse. Golden questions are not learner data, so those traces may
@@ -41,6 +47,8 @@ handles learner text and code, which must not leave the process through logs or 
 
 ## Consequences
 - A turn can be followed line by line with `grep turn=<id>`; see `docs/observability.md`.
+- With the real SDK, tracing adds about 2 ms per turn (measured offline); off, under 15
+  microseconds. Not yet run against the live Langfuse cloud.
 - Each log record costs about 90 microseconds on the calling thread with enqueued sinks (measured;
   10 microseconds without `enqueue`), so roughly 1 to 2 ms per turn before the first token.
 - Exception messages from libraries in `.errors.log` tracebacks can still echo request details.

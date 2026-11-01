@@ -27,6 +27,13 @@ can reach twice the limit.
   log shows `/v1/session/<id>` instead of the path. Log files are deleted after
   `CODEBUDDY_LOG_RETENTION_DAYS` (5) days. The leak judge sends the learner's code and the reply to
   OpenAI when sampling is on.
+- Langfuse tracing (off unless `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set and the
+  `trace` extra is installed) sends metadata only to Langfuse cloud, a third party: node
+  summaries from the logging whitelist, model ids, tiers, token counts, timings, scores and the
+  session hash. Never the message, code, reply, prompts, retrieved text, a learner id or token, or
+  the raw session id; no observation has an input or output, and no LangChain callback handler is
+  attached. Details and how to turn it off in
+  [observability.md](observability.md#langfuse-tracing). The Langfuse secret key belongs in `.env`.
 - `/v1/metrics` exposes counters only.
 - The Qdrant API key (`QDRANT_API_KEY`) is a secret value: it is never in `repr` of settings, logs
   (only the host is logged), error messages or `/healthz`. Keep it in `.env`, which is not

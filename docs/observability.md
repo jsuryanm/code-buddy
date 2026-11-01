@@ -6,8 +6,9 @@ which nodes ran, how long each took, what the policy decided, which model tier a
 whether a cache or a fallback was involved. It never contains learner text (see
 [Privacy](#privacy)).
 
-Langfuse tracing and RAGAS evaluation are planned in this change set (ADR 0009); they are not
-built yet.
+With Langfuse keys set, each turn is also sent to Langfuse as a trace of metadata only (see
+[Langfuse tracing](#langfuse-tracing)). RAGAS evaluation is planned in this change set
+(ADR 0009) and not built yet.
 
 ## Where the files are
 
@@ -115,7 +116,8 @@ How to read it:
   template, not the path).
 
 Other programs write the same kind of lines: a start line, a `config ...` summary without secrets
-(model ids, Qdrant mode with the host only, index and prompt versions, memory, tools, tracing),
+(model ids, Qdrant mode with the host only, index and prompt versions, memory, tools; the API also
+reports `tracing=on|off`),
 progress with counts and durations, a finish line with the outcome and elapsed time, and on a
 failure the exception type with a hint such as `OPENAI_API_KEY is not set: add it to .env` or
 `the Qdrant folder is locked: stop the API (or the other process) first`. The traceback goes to
@@ -175,3 +177,115 @@ enqueued file sinks, each log record costs roughly 90 microseconds on the callin
 pickles the record for its queue; measured on the development machine), so a turn spends on the
 order of 1 to 2 ms on logging before its first token. That is well under the 1 s p95 target but
 not free; writing the files without `enqueue` costs about 10 microseconds per record instead.
+
+## Langfuse tracing
+
+The API can send one trace per turn to a Langfuse cloud project
+(`src/codebuddy/observability/tracing.py`). Traces hold the same kind of metadata as the log
+lines, so Langfuse can chart time to first token, fallbacks, reveals and degraded replies across
+many turns. Tracing is off unless both Langfuse keys are set and the `trace` extra is installed.
+Nothing in this repository has been run against the real Langfuse cloud yet: the adapter is tested
+against a fake `langfuse` module, and the SDK calls were checked against the installed
+langfuse 4.18 source.
+
+### Setup
+
+1. Create a project in Langfuse cloud (Settings, API keys) and copy the public and secret keys.
+2. Add them to `.env`:
+   ```
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_BASE_URL=https://cloud.langfuse.com      # or https://us.cloud.langfuse.com
+   ```
+   `LANGFUSE_HOST` (the old name) is still read when `LANGFUSE_BASE_URL` is not set. Without
+   either, the SDK uses the EU cloud.
+3. Install the extra: `uv sync --extra ui --extra trace`.
+4. Restart the API. The start lines say `tracing on: Langfuse host=... sample_rate=...` and the
+   `config ...` line ends with `tracing=on`; `/healthz` returns `"tracing_enabled": true`.
+   Otherwise one line says why it is off (switch off, a key missing, the package missing, or the
+   client failed to start).
+5. Send a turn and open Tracing in the Langfuse project. Traces are exported in the background in
+   batches, so they appear after a few seconds; the API flushes what is left when it shuts down.
+
+The keyless demo, the UI process, ingestion and the offline eval never trace.
+
+### What a trace contains
+
+| Observation | Kind | Attributes |
+|---|---|---|
+| `tutor-turn` | root span, one per `run_turn` call | `route` (turn, show-answer, approve; a quiz start is a `turn`), and at the end `mode`, `level`, `paused`, or `error` (exception type). Trace fields: name `tutor-turn`, session id = the 8-char session hash, tag = the route, metadata `prompt_version`, `index_version`, the three tier model ids, and `turn` (first 8 characters of the turn id) |
+| `load_state`, `analyze_code`, `check_cache`, `classify`, `retrieve`, `recall_memory`, `refine_retrieval`, `policy`, `approve_run`, `run_tools`, `generate`, `update_state`, `emit_cached` | span per node that ran, child of the root | the node's whitelisted summary, the same fields as its log line (for example `mode`, `level`, `reasons` on `policy`; `chunks`, `grounded`, `sources` on `retrieve`); `paused` or `error` when it did not return |
+| `classifier` | generation, under `classify` | model id, tier `fast`, `outcome` ok or error. Only the LLM classifier makes one; the rule shortcut for "show me the answer" makes no call |
+| `generate` | generation per model attempt, under the `generate` node | model id, tier, `cap` (also as `max_completion_tokens`), token usage (input, output) and `finish_reason` when the stream reports them, `outcome` ok, empty, error (with the type) or guarded |
+| `tool:trace_python`, `tool:suggest_cases` | span per tool call, under `run_tools` | `ok`, `error` type |
+
+Scores on each trace:
+
+| Score | Type | Meaning |
+|---|---|---|
+| `ttft_ms` | numeric | Time from the start of the graph run to its first streamed token (absent when no token was sent, for example a turn paused for approval) |
+| `total_ms` | numeric | Whole graph run |
+| `cache_hit` | boolean | Reply came from the answer cache |
+| `guarded` | boolean | The leak guard stopped the model's reply |
+| `degraded` | boolean | Every tier failed and the learner got the degraded text |
+| `quiz` | boolean | The turn started or answered a quiz |
+
+A turn paused for approval gives two traces: the first part (route `turn`, `paused`) and the
+resumed part (route `approve`). They share the `turn` metadata value. The resumed part has no
+session id, because the resume command carries none.
+
+### Dashboard recipe
+
+In Langfuse, Dashboards, new dashboard, filter traces by name `tutor-turn` (and by environment if
+you set `LANGFUSE_TRACING_ENVIRONMENT`):
+
+- **TTFT p50 and p95**: a chart on scores, score name `ttft_ms`, aggregation p50 and p95, by day.
+  The spec target is p95 under 1000 ms.
+- **Total time**: the same with `total_ms`.
+- **Degraded rate and guarded rate**: scores `degraded` and `guarded`, aggregation average (the
+  share of turns where the value is 1).
+- **Cache hit rate**: score `cache_hit`, average.
+- **Fallback rate**: observations of type generation named `generate`, grouped by `outcome`; the
+  share of `error` and `empty` attempts is the share that moved down a tier. Group by `tier` or
+  model to see which model fails.
+- **Reveal rate**: traces grouped by the `mode` attribute of the root; `reveal` divided by all.
+- **Token use by model**: the generation usage charts, grouped by model.
+
+### Privacy
+
+Langfuse cloud is a third party: whatever the tracer sends is stored on Langfuse's servers under
+their terms and data region (EU or US, chosen by the base URL). The tracer therefore sends metadata
+only:
+
+- Sent: observation names, start and end times, node summaries from the logging whitelist (modes,
+  levels, counts, booleans, policy reasons, pattern ids, tool names, corpus source titles), model
+  ids, tier names, token caps and counts, finish reasons, outcomes, exception type names, the
+  prompt and index versions, the first 8 characters of the turn id, and the 8-char SHA-256 hash
+  of the session id.
+- Never sent: the learner's message or code, the reply, prompts, retrieved chunk text, memory
+  notes, learner ids or tokens, the raw session id. No observation is given an input or output
+  field, and no user id is set.
+- There is no LangChain `CallbackHandler` on the graph (it would record prompts and completions;
+  ADR 0009). The client is created with `should_export_span` set to Langfuse's own spans only, so
+  OpenTelemetry spans from other libraries are not exported through it.
+- A test records every observation of graph and API turns with sentinel strings in the message,
+  code, replies, learner token and session id and checks that none appear
+  (`tests/integration/test_tracing_flow.py`); another checks the adapter never passes `input` or
+  `output` (`tests/unit/test_tracing.py`).
+
+### Turning it off
+
+Set `CODEBUDDY_TRACING_ENABLED=false`, or remove the two keys, and restart. Without the `trace`
+extra installed it is off as well. `CODEBUDDY_TRACE_SAMPLE_RATE` (0 to 1, default 1) keeps only
+that share of traces (the SDK's sampler).
+
+### Failure and cost
+
+Every tracer call is wrapped: an error is logged at DEBUG with its type name and the turn goes on
+unchanged (tested). The SDK sends batches from a background thread; the hot path never waits on
+the network. Measured on the development machine with the offline graph: the tracing hooks cost
+under 1 microsecond per node with tracing off (about 10 to 15 microseconds per turn), and the real
+Langfuse SDK adds about 2 ms per turn (span creation for about 15 observations and 6 scores; most
+of it before the first token). Export failures are logged by the SDK's own `langfuse` logger and
+reach `.errors.log`. At shutdown the API drains background tasks, then flushes and shuts down the
+tracer; with an unreachable host the SDK's retries can make that take a few seconds.

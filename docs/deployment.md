@@ -33,6 +33,14 @@ docker compose run --rm -e CUDA_VISIBLE_DEVICES= api python -m codebuddy.rag.ing
 docker compose build api      # back to the slim default
 ```
 
+Langfuse tracing needs the `trace` extra in the image and the `LANGFUSE_*` keys in `.env` (see
+[observability.md](observability.md#langfuse-tracing)). The Dockerfile default stays
+`--extra ui`; build with:
+
+```bash
+docker compose build --build-arg EXTRAS="--extra ui --extra trace" api
+```
+
 The empty `CUDA_VISIBLE_DEVICES=` keeps Docling's PyTorch off the GPU probe that crashes on WSL
 (see [setup.md](setup.md)). Neither image has been built here. Compose sets
 `CODEBUDDY_QDRANT_URL`, which turns on the server code path (payload indexes) that the embedded
@@ -76,4 +84,4 @@ Learner memory still uses embedded files under `MEMORY_PATH`.
 ## Known gaps
 
 No Helm or Terraform, no migrations (there is no relational database), no log shipping, no
-Langfuse tracing, no autoscaling guidance. The checkpoint database grows with every turn.
+Langfuse dashboards or alerts, no autoscaling guidance. The checkpoint database grows with every turn.

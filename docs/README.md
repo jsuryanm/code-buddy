@@ -46,9 +46,11 @@ Built and tested offline (482 tests, offline eval passing):
 - Dockerfile, compose file, and CI workflow (written, not run)
 - Offline evals
 - Plain-language logs with loguru in `logs/YYYY-MM-DD/`, metadata only ([observability.md](observability.md))
+- Optional Langfuse traces per turn with scores (TTFT, total time, cache hit, guarded, degraded,
+  quiz), metadata only (`--extra trace`, [observability.md](observability.md#langfuse-tracing))
 
 Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
-(memory uses bearer-like learner tokens instead), Langfuse tracing, a hard sandbox boundary (needs
+(memory uses bearer-like learner tokens instead), Langfuse dashboards and alerts, a hard sandbox boundary (needs
 a container or a remote sandbox adapter), LLM-written synthetic questions for ingestion,
 deployment automation, solved tracking across sessions and concept mastery for the learner model
 (fix detection within a session is built; see [pedagogy-policy.md](pedagogy-policy.md)).

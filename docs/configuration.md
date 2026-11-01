@@ -16,6 +16,9 @@ also load `.env` into the process environment (`load_dotenv`), so those librarie
 | `GROQ_API_KEY` | `groq` SDK | Enables voice input. Without it `/v1/stt` returns 503 and the UI hides the microphone |
 | `CODEBUDDY_API_KEY` | Streamlit UI | Key sent to the API when the server requires one. Unset means no key. Environment only; the UI has no field for it |
 | `MEM0_TELEMETRY` | `mem0` | Set to `False` by our code before mem0 is imported (`setdefault`), so mem0 sends no usage data. Set it yourself to `True` only if you want that |
+| `LANGFUSE_PUBLIC_KEY` | `observability/tracing.py` | With `LANGFUSE_SECRET_KEY` and the `trace` extra, the API sends metadata-only traces to Langfuse ([observability.md](observability.md#langfuse-tracing)). Unset means no tracing |
+| `LANGFUSE_SECRET_KEY` | `observability/tracing.py` | Secret; keep it in `.env` |
+| `LANGFUSE_BASE_URL` | `observability/tracing.py` | `https://cloud.langfuse.com` (EU, the SDK default) or `https://us.cloud.langfuse.com`. The deprecated `LANGFUSE_HOST` is used when this is unset |
 | `CODEBUDDY_API_URL` | Streamlit UI | Default `http://localhost:8000`. Environment only; the UI has no field for it (prefix kept for consistency; read by the UI, not by `Settings`) |
 
 ## Settings (`CODEBUDDY_<NAME>`)
@@ -144,6 +147,13 @@ See [observability.md](observability.md) for the layout and how to read them.
 | `LOG_JSON` | `false` | Also write a `.jsonl` file next to the `.log` |
 | `LOG_RETENTION_DAYS` | `5` | At start, log files older than this (by modification time) are deleted and empty day folders removed. Minimum 1 |
 
+### Tracing
+
+| Name | Default | Meaning |
+|---|---|---|
+| `TRACING_ENABLED` | `true` | `false` turns Langfuse tracing off even with keys set |
+| `TRACE_SAMPLE_RATE` | `1.0` | Share of traces kept, 0 to 1 (the Langfuse SDK's sampler) |
+
 ### Cache TTLs (seconds)
 
 | Name | Default | Layer |
@@ -169,6 +179,7 @@ See [observability.md](observability.md) for the layout and how to read them.
 | `api/app.py` (memory) | `MEMORY_SECRET` |
 | `rag/ingest.py` and `rag/store.py` | Qdrant location, index version |
 | `observability/logs.py` | `LOG_*`, called first by every entrypoint (API lifespan, demo, UI, ingest, eval, MCP server) |
+| `observability/tracing.py` | `TRACING_ENABLED`, `TRACE_SAMPLE_RATE`, `LANGFUSE_*` from the process environment (called from `api/wiring.py`) |
 
 ## Hard-coded values worth knowing
 

@@ -53,6 +53,7 @@ question and gives up.
 
 **Speed and reliability**
 - Streaming replies, layered caches, model tier fallbacks, and a degraded reply when models fail
+- Optional Langfuse traces per turn, metadata only (no learner text, code or replies)
 
 **Safety and operations**
 - Answer-leak guard, API keys, rate limits, CORS, and metrics at `/v1/metrics`
@@ -215,7 +216,8 @@ The code is covered by offline tests and a keyless eval. Not yet exercised again
 services: OpenAI chat replies, Groq Whisper, Upstash Redis, mem0 extraction, the Docker files,
 and PDF parsing beyond the two documents above. The sandbox is not a security boundary; do not
 expose it to untrusted users. There are no user accounts (memory uses signed learner tokens),
-and instructor features and Langfuse tracing are not built.
+and instructor features are not built. Langfuse tracing (metadata only) is built but has not
+been run against the live Langfuse cloud.
 
 ## Documentation
 

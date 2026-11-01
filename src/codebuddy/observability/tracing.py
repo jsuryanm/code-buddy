@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Protocol
@@ -112,7 +112,7 @@ _current: ContextVar[Observation] = ContextVar("codebuddy_trace", default=OFF)
 
 
 @contextmanager
-def _opened(tracer: Tracer, obs: Any, current: bool) -> Iterator[Observation]:
+def _opened(tracer: Tracer, obs: Any, current: bool) -> Generator[Observation]:
     handle = Observation(tracer, obs)
     token = _current.set(handle) if current else None
     try:
@@ -127,7 +127,7 @@ def _opened(tracer: Tracer, obs: Any, current: bool) -> Iterator[Observation]:
 
 
 @contextmanager
-def turn(tracer: Tracer, turn_id: str, session_hash: str, **attrs: Any) -> Iterator[Observation]:
+def turn(tracer: Tracer, turn_id: str, session_hash: str, **attrs: Any) -> Generator[Observation]:
     """The root `tutor-turn` observation. It is not made current, because `run_turn` is an async
     generator; it reaches the nodes through the graph config instead."""
     obs = call(tracer, "turn", turn_id, session_hash, attrs) if tracer.enabled else None
@@ -139,7 +139,7 @@ def turn(tracer: Tracer, turn_id: str, session_hash: str, **attrs: Any) -> Itera
 
 
 @contextmanager
-def span(name: str, parent: Observation | None = None, **attrs: Any) -> Iterator[Observation]:
+def span(name: str, parent: Observation | None = None, **attrs: Any) -> Generator[Observation]:
     """A child of `parent` (default: the current observation), current inside the block."""
     p = parent if parent is not None else _current.get()
     obs = call(p.tracer, "span", p.obs, name, attrs) if p.tracer is not None else None
@@ -151,7 +151,7 @@ def span(name: str, parent: Observation | None = None, **attrs: Any) -> Iterator
 
 
 @contextmanager
-def generation(name: str, *, model: str | None, tier: str, **attrs: Any) -> Iterator[Observation]:
+def generation(name: str, *, model: str | None, tier: str, **attrs: Any) -> Generator[Observation]:
     """A model call under the current observation. Update it with `usage`, `finish_reason` and
     `outcome`; never with a prompt or a reply."""
     p = _current.get()
