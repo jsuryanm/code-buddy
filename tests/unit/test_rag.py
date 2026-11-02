@@ -1,3 +1,5 @@
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -6,7 +8,7 @@ from codebuddy.cache.layers import CachedEmbeddings, RetrievalCache
 from codebuddy.cache.memory import InMemoryCache
 from codebuddy.rag.chunking import chunk_markdown
 from codebuddy.rag.ingest import html_to_markdown, ingest_file
-from codebuddy.rag.manifest import Manifest
+from codebuddy.rag.manifest import Manifest, ManifestEntry, file_sha256, manifest_target
 from codebuddy.rag.retrieve import Retriever
 from codebuddy.rag.store import get_store
 
@@ -118,3 +120,45 @@ def test_docling_code_comments_do_not_become_headings():
     assert {c.meta["chapter"] for c in chunks} == {"Recursion"}
     assert all("inside class Hand" not in c.meta["section"] for c in chunks)
     assert any("# inside class Hand:" in c.text for c in chunks)  # the comment text is kept
+
+
+def _target_settings(settings, **update):
+    return settings.model_copy(update=update)
+
+
+def test_manifest_is_per_target(stores, settings, tmp_path):
+    path = SAMPLE / "python_basics.md"
+    kw = dict(corpus="fundamentals", store=stores["fundamentals"], settings=settings)
+    local = manifest_target(_target_settings(settings, qdrant_url=None, qdrant_path="data/index"))
+    cloud = manifest_target(
+        _target_settings(settings, qdrant_url="https://u:k@abc.cloud.qdrant.io:6333/x")
+    )
+    mpath = tmp_path / "manifest.json"
+    assert ingest_file(path, manifest=Manifest(mpath, local), **kw) > 0
+    assert ingest_file(path, manifest=Manifest(mpath, local), **kw) == 0  # same target: skip
+    assert ingest_file(path, manifest=Manifest(mpath, cloud), **kw) > 0  # other target: ingest
+    assert ingest_file(path, manifest=Manifest(mpath, cloud), **kw) == 0
+    text = mpath.read_text()
+    assert "abc.cloud.qdrant.io" in cloud and "u:k" not in text and "/x" not in cloud
+    assert "https://" not in text
+
+
+def test_manifest_old_flat_format_is_read_for_embedded_only(stores, settings, tmp_path):
+    path = SAMPLE / "python_basics.md"
+    mpath = tmp_path / "manifest.json"
+    entry = ManifestEntry(
+        "python_basics.md",
+        "T",
+        "fundamentals",
+        "original",
+        file_sha256(path),
+        3,
+        "2026-01-01T00:00:00+00:00",
+    )
+    mpath.write_text(json.dumps({"fundamentals::python_basics.md": asdict(entry)}))
+    kw = dict(corpus="fundamentals", store=stores["fundamentals"], settings=settings)
+    emb = manifest_target(_target_settings(settings, qdrant_url=None))
+    srv = manifest_target(_target_settings(settings, qdrant_url="https://h.example:6333"))
+    assert ingest_file(path, manifest=Manifest(mpath, srv), **kw) > 0  # old entry is not for it
+    assert ingest_file(path, manifest=Manifest(mpath, emb), **kw) == 0  # still skipped locally
+    assert json.loads(mpath.read_text())["format"] == 2  # migrated on write

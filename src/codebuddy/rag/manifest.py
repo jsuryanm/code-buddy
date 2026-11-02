@@ -7,6 +7,9 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from codebuddy.config import Settings
+from codebuddy.rag.store import qdrant_host
+
 
 @dataclass
 class ManifestEntry:
@@ -27,13 +30,47 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+LEGACY = "legacy"
+
+
+def manifest_target(settings: Settings) -> str:
+    """Id of where the index lives: embedded folder or server host (never a key or full URL),
+    plus collection prefix and index version, so each target keeps its own record."""
+    where = (
+        f"server:{qdrant_host(settings.qdrant_url)}"
+        if settings.qdrant_url
+        else f"embedded:{settings.qdrant_path}"
+    )
+    return f"{where}|{settings.qdrant_collection_prefix}|{settings.index_version}"
+
+
 class Manifest:
-    def __init__(self, path: Path):
+    """Per-target record of ingested files. File format 2:
+    {"format": 2, "targets": {target_id: {"corpus::source": entry}}}.
+    The old flat format (one dict of entries) is read as belonging to the embedded index
+    next to this file and rewritten in the new format on the next write."""
+
+    def __init__(self, path: Path, target: str = "default"):
         self.path = path
-        self._entries: dict[str, ManifestEntry] = {}
+        self.target = target
+        self._targets: dict[str, dict[str, ManifestEntry]] = {}
         if path.exists():
             raw = json.loads(path.read_text())
-            self._entries = {k: ManifestEntry(**v) for k, v in raw.items()}
+            if raw.get("format") == 2:
+                self._targets = {
+                    t: {k: ManifestEntry(**v) for k, v in es.items()}
+                    for t, es in raw["targets"].items()
+                }
+            else:  # old flat format: only an embedded index could have written it
+                self._targets = {LEGACY: {k: ManifestEntry(**v) for k, v in raw.items()}}
+        if target.startswith("embedded:") and LEGACY in self._targets:
+            adopted = self._targets.pop(LEGACY)
+            for k, v in adopted.items():
+                self._targets.setdefault(target, {}).setdefault(k, v)
+
+    @property
+    def _entries(self) -> dict[str, ManifestEntry]:
+        return self._targets.setdefault(self.target, {})
 
     def key(self, corpus: str, source: str) -> str:
         return f"{corpus}::{source}"
@@ -45,9 +82,14 @@ class Manifest:
     def record(self, entry: ManifestEntry) -> None:
         self._entries[self.key(entry.corpus, entry.source)] = entry
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps({k: asdict(v) for k, v in self._entries.items()}, indent=2) + "\n"
-        )
+        data = {
+            "format": 2,
+            "targets": {
+                t: {k: asdict(v) for k, v in es.items()} for t, es in self._targets.items()
+            },
+        }
+        self.path.write_text(json.dumps(data, indent=2) + "\n")
 
     def entries(self) -> list[ManifestEntry]:
+        """Entries of the current target."""
         return list(self._entries.values())

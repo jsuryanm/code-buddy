@@ -21,7 +21,7 @@ from loguru import logger
 from codebuddy.config import Settings, get_settings
 from codebuddy.observability.logs import describe_config, log_failure, log_start, setup_logging
 from codebuddy.rag.chunking import chunk_markdown
-from codebuddy.rag.manifest import Manifest, ManifestEntry, file_sha256
+from codebuddy.rag.manifest import Manifest, ManifestEntry, file_sha256, manifest_target
 
 SUPPORTED = {".md", ".markdown", ".txt", ".html", ".htm", ".pdf"}
 
@@ -176,7 +176,7 @@ def main(argv: list[str] | None = None) -> None:  # pragma: no cover - needs liv
             FastEmbedSparse(model_name="Qdrant/bm25"),
             settings,
         )
-        manifest = Manifest(Path(settings.qdrant_path) / "manifest.json")
+        manifest = Manifest(Path(settings.qdrant_path) / "manifest.json", manifest_target(settings))
         files = (
             [args.path]
             if args.path.is_file()

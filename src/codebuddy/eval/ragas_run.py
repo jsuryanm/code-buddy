@@ -217,7 +217,7 @@ def ingest_sample(settings: Settings) -> None:
     from codebuddy.api.wiring import LEARNER_CORPORA
     from codebuddy.llm import build_embeddings
     from codebuddy.rag.ingest import ingest_file
-    from codebuddy.rag.manifest import Manifest
+    from codebuddy.rag.manifest import Manifest, manifest_target
     from codebuddy.rag.store import get_store, make_client
 
     client = make_client(settings, LEARNER_CORPORA)
@@ -233,7 +233,9 @@ def ingest_sample(settings: Settings) -> None:
             SAMPLE / "python_basics.md",
             corpus="fundamentals",
             store=store,
-            manifest=Manifest(Path(settings.qdrant_path) / "manifest.json"),
+            manifest=Manifest(
+                Path(settings.qdrant_path) / "manifest.json", manifest_target(settings)
+            ),
             settings=settings,
             title="Sample Basics",
         )
