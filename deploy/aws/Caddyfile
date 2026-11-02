@@ -1,0 +1,42 @@
+# Caddy in front of the Streamlit UI (deploy/aws). Lives in /opt/codebuddy; the same text is
+# embedded in template.yaml (a unit test keeps them equal). Values come from the caddy
+# container's environment (compose reads them from /opt/codebuddy/.env).
+#
+# SITE_ADDRESS is DomainName, or <ip-with-dashes>.sslip.io. Caddy gets a Let's Encrypt
+# certificate on its own (needs ports 80 and 443 open to the internet) and keeps it in /data.
+# Basic auth covers the whole site: Streamlit has no login, and every visitor would spend
+# your OpenAI credit. HTTP/3 is off because the security group opens TCP only.
+{
+    servers {
+        protocols h1 h2
+    }
+}
+
+{$SITE_ADDRESS} {
+    basic_auth {
+        {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Optional: publish the API too (it streams Server-Sent Events, hence flush_interval -1).
+    # Only with CODEBUDDY_API_KEYS set, because every /v1 call then needs an API key on top of
+    # basic auth. The API serves /healthz and /v1/*, so strip the /api prefix.
+    # handle_path /api/* {
+    #     reverse_proxy api:8000 {
+    #         flush_interval -1
+    #     }
+    # }
+
+    # The UI. WebSockets pass through reverse_proxy by default; flush_interval -1 sends
+    # streamed bytes at once instead of buffering them.
+    reverse_proxy ui:8501 {
+        flush_interval -1
+    }
+}

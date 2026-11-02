@@ -1,0 +1,73 @@
+# CodeBuddy on one AWS EC2 instance (deploy/aws/template.yaml). Lives in /opt/codebuddy on the
+# server; the same text is embedded in the template's UserData (a unit test keeps them equal).
+# Authored and checked statically only: never run (no Docker daemon in the dev shell).
+#
+# Values come from /opt/codebuddy/.env, written from SSM Parameter Store by codebuddy-env
+# (single-quoted, so a "$" in the bcrypt hash is kept literally). Never edit secrets in here.
+# Only Caddy publishes ports (80, 443). The API stays on the private compose network; the UI
+# reaches it as http://api:8000 with an API key. Memory limits fit a 2 GiB t3.small plus swap.
+name: codebuddy
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  image: ${IMAGE_URI:?set IMAGE_URI in .env}
+  restart: unless-stopped
+  pids_limit: 256
+  logging: *logging
+
+services:
+  api:
+    <<: *app
+    env_file: [.env]
+    environment:
+      CODEBUDDY_MEMORY_ENABLED: "false"   # learner memory stays off on this deployment
+    volumes:
+      - /opt/codebuddy/logs:/app/logs     # owned by uid 10001 (the image's user)
+      - app-data:/app/data                # checkpoints and manifest
+    mem_limit: 800m
+
+  ui:
+    <<: *app
+    command: ["streamlit", "run", "src/codebuddy/ui/app.py", "--server.port", "8501",
+              "--server.address", "0.0.0.0", "--server.headless", "true"]
+    environment:
+      CODEBUDDY_API_URL: http://api:8000
+      CODEBUDDY_API_KEY: ${CODEBUDDY_API_KEY:?set CODEBUDDY_API_KEYS in SSM}
+    volumes:
+      - /opt/codebuddy/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+    depends_on: [api]
+    mem_limit: 500m
+
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?set BASIC_AUTH_HASH in SSM}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data                  # certificates: keep it, Let's Encrypt has rate limits
+      - caddy-config:/config
+    depends_on: [ui]
+    mem_limit: 96m
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:
