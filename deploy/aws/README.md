@@ -4,7 +4,7 @@ One EC2 instance (t3.small default, t3.micro allowed) runs the prebuilt image fr
 API + Streamlit UI behind Caddy (HTTPS, basic auth). Secrets live in SSM Parameter Store.
 Qdrant Cloud, Upstash, Langfuse, OpenAI and Groq stay external. Authored and checked offline
 only (cfn-lint, shellcheck, unit tests); **never deployed**. The full beginner guide is
-`docs/aws-free-tier.md` (coming in the docs task).
+[`docs/aws-free-tier.md`](../../docs/aws-free-tier.md).
 
 Needs: AWS CLI v2 logged in (`AWS_PROFILE`, `AWS_REGION`), the Session Manager plugin, and the
 image published by `.github/workflows/docker-publish.yml` and made public once.
@@ -32,7 +32,7 @@ your own machine into Qdrant Cloud; the server does not ingest.
 | `scripts/` | The commands above |
 
 On the server (`aws ssm start-session --target <InstanceId>`): files in `/opt/codebuddy`,
-`sudo codebuddy-update`, `sudo codebuddy-status`, boot log `/var/log/codebuddy-bootstrap.log`.
+`sudo /usr/local/bin/codebuddy-update`, `sudo /usr/local/bin/codebuddy-status` (use the full path: `sudo` does not search `/usr/local/bin`), boot log `/var/log/codebuddy-bootstrap.log`.
 
 Costs: public IPv4 $0.005/h (free-plan coverage unconfirmed), a stopped instance still bills
 its disk and the Elastic IP, and the free plan ends after 6 months (the account closes unless

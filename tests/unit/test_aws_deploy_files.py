@@ -238,6 +238,15 @@ def test_scripts_are_strict_and_documented():
     assert "read -r -p" in (AWS / "scripts" / "deploy.sh").read_text()
 
 
+def test_update_command_uses_full_path_everywhere():
+    full = "sudo /usr/local/bin/codebuddy-update"
+    assert "/usr/local/bin/codebuddy-update <<" in (AWS / "template.yaml").read_text()
+    for path in (AWS / "README.md", AWS / "scripts" / "update.sh"):
+        text = path.read_text()
+        assert full in text, path.name
+        assert "sudo codebuddy-" not in text, path.name
+
+
 def test_publish_workflow():
     workflow = yaml.safe_load(WORKFLOW_TEXT)
     assert workflow["permissions"] == {"contents": "read", "packages": "write"}

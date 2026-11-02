@@ -253,12 +253,13 @@ line per file with its number of chunks.
 **For Qdrant Cloud (way C)**, add `--no-deps` so the local `qdrant` is not started:
 
 ```bash
-docker compose --profile ingest run --rm --no-deps ingest <FILE> --corpus fundamentals --force
+docker compose --profile ingest run --rm --no-deps ingest <FILE> --corpus fundamentals
 ```
 
-`--force` re-ingests a file even if it was ingested before. You need it when you switch between
-the local Qdrant and the cloud, because the record of ingested files
-(`/app/data/index/manifest.json` in the `app-data` volume) is the same for both.
+Each target keeps its own record of ingested files (in `/app/data/index/manifest.json` in the
+`app-data` volume): the local Qdrant and each cluster or collection prefix are tracked
+separately, so ingesting the same file into the cloud after the local one works without any
+extra flag. `--force` is only for re-ingesting a file on purpose when it has not changed.
 
 **PDF files** need an extra part (Docling, which pulls in PyTorch, several GB). Build it into the
 image first, ingest, then rebuild without it for everyday use:
@@ -334,7 +335,7 @@ docker compose down -v
 | API waits forever, or "dependency failed to start" | `qdrant` is not healthy | `docker compose ps` and `docker compose logs qdrant` |
 | Qdrant unreachable with Qdrant Cloud | Wrong endpoint or key in `.env` | Check `QDRANT_CLUSTER_ENDPOINT` and `QDRANT_API_KEY`; the `api` log names the host it tried |
 | Tutor cites nothing | Nothing ingested yet, or the ingest went to another target | Run the ingestion step; check that its log names the same host as the API |
-| Ingestion says the file was skipped | It was ingested before | Add `--force` |
+| Ingestion says the file was skipped | It was already ingested into this same target and has not changed | Nothing to do, or add `--force` to ingest it again on purpose |
 | Container killed, exit code 137 | Out of memory | Give Docker Desktop more memory (Settings > Resources), or raise that service's `mem_limit` |
 | No files in `logs/` | The container user cannot write there | `chmod a+rwx logs`, then restart |
 | UI says "Can't reach the tutor" | The API container is down or still starting | `docker compose ps`, then `docker compose logs api` |

@@ -135,6 +135,10 @@ Then ingest once against the cluster (the same settings are used, so this writes
 uv run python -m codebuddy.rag.ingest data/raw/thinkpython.pdf --corpus fundamentals
 ```
 
+Files you already ingested into the local folder are still sent to the cluster: each target
+(the local folder, and each cluster and collection prefix) keeps its own record in
+`data/index/manifest.json`. `--force` is only for re-ingesting an unchanged file on purpose.
+
 The startup log shows `qdrant=server host=<host> prefix=<prefix> collections=[...]`; an
 unreachable server fails with "Could not reach Qdrant at <host>". `/healthz` reports
 `"qdrant": "server"` or `"embedded"`. Learner memory stays on local embedded files either way.
@@ -146,7 +150,7 @@ unreachable server fails with "Could not reach Qdrant at <host>". `/healthz` rep
 | `RuntimeError: Set model IDs in the environment` at API startup | One of `CODEBUDDY_MODEL_FAST/STANDARD/HEAVY` is empty. Set all three in `.env`. |
 | `/healthz` shows `"cache": "memory"` | Upstash variables are missing, so caching is per-process and lost on restart. Set both. |
 | Qdrant error about the storage folder being locked | Embedded Qdrant allows one process. Stop the API before running ingestion, or set `CODEBUDDY_QDRANT_URL` to use a server. |
-| Replies say "I can't reach the tutor model" | The model call failed (bad key, wrong model ID, network). The API logs the cause at WARNING level; the reply falls back to course material. |
+| Replies look generic, or the UI says "The tutor had trouble answering. Try again in a moment." | The model call failed (bad key, wrong model ID, network). The tutor retries on lighter tiers, then answers from code: a normal-looking fallback question or a short course summary. The UI shows the "trouble" warning only for degraded explanations and reveals. The API log line `model call failed (mode=..., tier=...)` says which tier failed and why. |
 | Replies cite nothing and say the context is missing | The corpus is empty. Ingest documents (see above) and check `data/index/manifest.json`. |
 | `PDF ingestion needs the extra` | Run `uv sync --extra pdf`. |
 | No voice recording in the chat input, or "Voice input is off" | The server has no speech provider. Set `GROQ_API_KEY` and restart the API (`/healthz` shows `stt_configured`) |

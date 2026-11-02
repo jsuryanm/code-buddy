@@ -66,7 +66,7 @@ curl localhost:8000/healthz
 | Server works but replies cite nothing | The server has no collections with your prefix yet | Run ingestion again with the same settings: it writes to the server |
 | `PDF ingestion needs the extra: uv sync --extra pdf` | The `pdf` extra is not installed | `uv sync --extra ui --extra pdf` |
 | Segfault during PDF ingestion on WSL | PyTorch crashes while looking for a GPU | Start the command with an empty `CUDA_VISIBLE_DEVICES=`, for example `CUDA_VISIBLE_DEVICES= uv run python -m codebuddy.rag.ingest ...` |
-| `<FILE>: unchanged, skipped` | The file was already ingested and has not changed | Add `--force` to ingest it again anyway |
+| `<FILE>: unchanged, skipped` | The file was already ingested into this same target (local folder or cluster) and has not changed | Nothing to do, or add `--force` to ingest it again anyway |
 
 ## Voice
 

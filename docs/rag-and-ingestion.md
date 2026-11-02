@@ -35,7 +35,7 @@ uv run python -m codebuddy.rag.ingest PATH --corpus NAME [options]
 | `--language` | `python` | Metadata and retrieval filter |
 | `--difficulty` | `beginner` | Metadata |
 | `--pcdit-stage` | none | Tags every chunk with a PCDIT stage |
-| `--force` | off | Re-ingest even if the file hash is unchanged |
+| `--force` | off | Re-ingest on purpose even if the file hash is unchanged for this target |
 
 Supported files: `.md`, `.markdown`, `.txt`, `.html`, `.htm`, `.pdf`.
 
@@ -55,7 +55,7 @@ Embedding uses `OpenAIEmbeddings` (needs `OPENAI_API_KEY`) plus BM25 sparse vect
 
 ## What ingestion does
 
-1. Hash the file (SHA-256). Skip it if the manifest already has the same hash for this corpus.
+1. Hash the file (SHA-256). Skip it if the manifest already has the same hash for this corpus **in the same target**. A target is the embedded folder or the server host, plus the collection prefix and index version, so a file ingested locally is still ingested into a cluster.
 2. Convert to Markdown.
 3. Split into sections at headings (levels 1 to 4), never at a heading inside a code fence.
 4. Pack paragraphs and whole code blocks into chunks of 800 to 2000 characters (about 200 to 500
@@ -65,7 +65,10 @@ Embedding uses `OpenAIEmbeddings` (needs `OPENAI_API_KEY`) plus BM25 sparse vect
 6. Upsert with a deterministic ID (UUID derived from the SHA-256 of source plus chunk text).
    Re-ingesting identical text overwrites instead of duplicating.
 7. Record the file in `<QDRANT_PATH>/manifest.json` (title, corpus, licence,
-   hash, chunk count, time).
+   hash, chunk count, time) under the target id (`embedded:<path>|<prefix>|<version>` or
+   `server:<host>|<prefix>|<version>`; never the API key or full URL). The file format is
+   `{"format": 2, "targets": {<target id>: {"<corpus>::<source>": {...}}}}`. An older flat file
+   is read as belonging to the embedded index and rewritten in this format.
 
 ### Chunk metadata
 

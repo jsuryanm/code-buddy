@@ -10,7 +10,7 @@ Usage: update.sh
 Runs /usr/local/bin/codebuddy-update on the server: re-reads SSM parameters into
 /opt/codebuddy/.env, then docker compose pull && docker compose up -d.
 Settings: STACK_NAME (code-buddy), AWS_REGION, AWS_PROFILE.
-By hand instead:  aws ssm start-session --target <instance-id>,  then  sudo codebuddy-update
+By hand instead:  aws ssm start-session --target <instance-id>,  then  sudo /usr/local/bin/codebuddy-update
 EOF
 }
 case "${1:-}" in -h|--help) usage; exit 0 ;; "") ;; *) usage >&2; exit 2 ;; esac

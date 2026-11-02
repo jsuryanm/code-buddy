@@ -2,7 +2,7 @@
 
 ## AWS free tier
 
-Planned: see `docs/aws-free-tier.md` (written in a later task, not present yet).
+See the beginner guide [aws-free-tier.md](aws-free-tier.md). It has not been run against a real AWS account yet.
 
 ## Local Docker
 

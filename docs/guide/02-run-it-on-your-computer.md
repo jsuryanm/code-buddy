@@ -300,7 +300,7 @@ The options:
 | `--corpus` | Which collection: `fundamentals` (learners see it) or `pedagogy` (learners never see it) | `fundamentals` |
 | `--title` | Name shown in citations | the file name |
 | `--licence` | Recorded with every chunk | `unverified` |
-| `--force` | Ingest again even if the file has not changed | off |
+| `--force` | Ingest again on purpose even if the file has not changed (each target, local or cluster, keeps its own record) | off |
 
 What you should see: log lines, then one line per file such as `data/raw/<FILE>.pdf: 338
 chunks` (or `unchanged, skipped` when nothing changed), then a finish line. The list

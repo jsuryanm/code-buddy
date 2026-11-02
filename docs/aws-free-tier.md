@@ -372,7 +372,7 @@ Then ingest. The two variables point ingestion at your cluster instead of the lo
 ```bash
 QDRANT_CLUSTER_ENDPOINT=<QDRANT_URL> QDRANT_API_KEY=<QDRANT_KEY> CUDA_VISIBLE_DEVICES= \
   uv run python -m codebuddy.rag.ingest data/raw/thinkpython.pdf \
-  --corpus fundamentals --title "Think Python" --force
+  --corpus fundamentals --title "Think Python"
 ```
 
 What each part means:
@@ -382,9 +382,10 @@ What each part means:
 - `CUDA_VISIBLE_DEVICES=` (empty): avoids a crash of the PDF converter on WSL when it looks for
   a graphics card.
 - `--corpus fundamentals`: the learner-facing collection.
-- `--force`: ingest even if the file was ingested before. You need it if you already ingested
-  the same file locally, because the record of ingested files (`data/index/manifest.json`) is
-  shared by the local and the cloud index, and ingestion would otherwise skip the file.
+- Ingesting the same file locally first does not matter: each target (the local folder, and each
+  cluster and collection prefix) keeps its own record of ingested files in
+  `data/index/manifest.json`, so the cluster still gets the file. (`--force` is only for
+  re-ingesting an unchanged file on purpose.)
 - `OPENAI_API_KEY` must be set (in your `.env` is fine). Ingestion uses OpenAI to make
   embeddings, which costs a little money.
 
@@ -397,7 +398,7 @@ If it fails:
 - "cannot reach" or an authentication error: check the endpoint URL and the API key.
 - The log says `embedded path=data/index`: the cluster variables were not picked up. Check the
   spelling.
-- It says the file was skipped: add `--force`.
+- It says the file was skipped: it was already ingested into this same cluster and has not changed. Add `--force` only if you want it again.
 
 **Collection names.** Collections are named `<prefix>_<corpus>_<version>`, for example
 `cb_fundamentals_v1`. The prefix comes from `QDRANT_COLLECTION_NAME` (default `cb`). If you set
