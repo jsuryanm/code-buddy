@@ -173,11 +173,11 @@ in-process" and the tools run inside the API instead.
 
 ```bash
 curl -N -X POST localhost:8000/v1/turn -H 'Content-Type: application/json' \
-  -d '{"session_id": "demo-1", "message": "my sum crashes with an IndexError", "code": "nums = [1, 2, 3]\ntotal = 0\nfor i in range(4):\n    total += nums[i]\nprint(total)"}'
+  -d '{"session_id": "demo-1", "message": "my sum crashes with an IndexError", "code": "nums = [1, 2, 3]\ntotal = 0\nfor i in range(len(nums) + 1):\n    total += nums[i]\nprint(total)"}'
 ```
 
 The reply streams as Server-Sent Events (`meta`, `token`, `approval`, `done`). Because the code
-is runnable, this example pauses with an `approval` event until the learner answers through
+is runnable, this example (an off-by-one loop that the code analyzer flags as `off_by_one_range`) pauses with an `approval` event until the learner answers through
 `/v1/approve`. Other endpoints:
 `/healthz`, `/v1/show-answer`, `/v1/approve`, `/v1/stt`, `/v1/session/{id}`, `/v1/memory/learners`, `/v1/memory`,
 `/v1/metrics`. Details: [docs/api.md](docs/api.md).

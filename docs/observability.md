@@ -7,8 +7,8 @@ whether a cache or a fallback was involved. It never contains learner text (see
 [Privacy](#privacy)).
 
 With Langfuse keys set, each turn is also sent to Langfuse as a trace of metadata only (see
-[Langfuse tracing](#langfuse-tracing)). RAGAS evaluation is planned in this change set
-(ADR 0009) and not built yet.
+[Langfuse tracing](#langfuse-tracing)). RAGAS evaluation is built: run it with
+`uv run python -m codebuddy.eval.ragas_run` (ADR 0009).
 
 ## Where the files are
 
@@ -36,7 +36,7 @@ logs/
 | `ingest` | `python -m codebuddy.rag.ingest` |
 | `eval` | `python -m codebuddy.eval.run` |
 | `mcp` | `python -m codebuddy.mcp_server` (stdout is the MCP protocol, so it logs to the file and stderr only) |
-| `ragas` | Reserved for the RAGAS runner (planned) |
+| `ragas` | `python -m codebuddy.eval.ragas_run` |
 
 The same lines also go to stderr. To find the log of the run you just started, read the first
 line on the terminal: it prints the path.

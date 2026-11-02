@@ -26,14 +26,14 @@ Detail behind the CLAUDE.md rule "pedagogy is code, not prompt". Source: PROJECT
 
 - "Show answer" is enabled after the 4th hint (sooner when an offer trigger fires) and needs no justification. An explicit request always reveals, even on the first turn.
 - Offer L4 proactively after 5 hints (turn cap 6, `LADDER_MAX_TURNS`) or 10 minutes on one problem (configurable). Hints 4 to 6 stay at L3.
-- Frustration signals that trigger the offer: repeated identical submissions, 5 or more hints without progress, phrases like "I give up" or "just tell me", rapid short messages.
+- Frustration signals that trigger the offer: repeated identical submissions, 5 or more hints without progress, phrases like "I give up", "I'm stuck" or "I don't get it". "Just tell me" and "show me the answer" are explicit reveal requests, not frustration signals.
 - A reveal always ends with a transfer question on a slightly different case.
 
 ## Error-explanation template (max 120 words)
 
 1. What happens, one sentence, using the learner's variable names.
 2. Why, one sentence naming the concept.
-3. Tiny trace, 3 to 5 lines of variable values on a small input.
+3. Tiny trace, 2 to 3 lines of variable values on a small input.
 4. One check question.
 
 ## Answer-leak guard
