@@ -102,7 +102,7 @@ learner agrees, restricted by an allowlist and resource limits, offline where th
 `.env` is gitignored and `.claude/settings.json` denies Claude Code reads of `.env*`. Keys:
 `OPENAI_API_KEY`, `GROQ_API_KEY`, `UPSTASH_REDIS_REST_*`, `CODEBUDDY_API_KEYS`,
 `CODEBUDDY_MEMORY_SECRET`. The ingest CLI and the API load `.env` into the process environment at
-startup. The Docker image contains no secrets; pass them at runtime. Rotate a key by changing the
+startup. Pass secrets in the environment, never in code. Rotate a key by changing the
 environment and restarting.
 
 ## Not done yet

@@ -14,8 +14,6 @@ It explains everything in plain words, in reading order:
 | [guide/README.md](guide/README.md) | Start here: what CodeBuddy is, the 5-minute picture, where to go next |
 | [guide/01-how-the-tutor-works.md](guide/01-how-the-tutor-works.md) | Follow one learner turn step by step: hints, Show answer, quiz, memory, caches, models |
 | [guide/02-run-it-on-your-computer.md](guide/02-run-it-on-your-computer.md) | Install, try the keyless demo, set up `.env`, ingest documents, tour the UI |
-| [guide/03-run-with-docker.md](guide/03-run-with-docker.md) | Run it with Docker |
-| [aws-free-tier.md](aws-free-tier.md) | Deploy it on the AWS free tier |
 | [guide/04-logs-tracing-and-evaluation.md](guide/04-logs-tracing-and-evaluation.md) | Read logs, trace turns in Langfuse, score answers with RAGAS |
 | [guide/05-troubleshooting.md](guide/05-troubleshooting.md) | Match a symptom to its cause and fix |
 | [guide/06-glossary.md](guide/06-glossary.md) | Look up any technical word |
@@ -35,7 +33,6 @@ The rest of this folder is the reference manual:
 | [memory.md](memory.md) | Learn what long-term learner memory stores, its opt-in and privacy limits, and how to enable it |
 | [observability.md](observability.md) | Find and read the logs: one turn line by line, layout, retention, privacy |
 | [security.md](security.md) | Know what is protected, what is not, and what to do before going public |
-| [deployment.md](deployment.md) | Containerize and run it (Dockerfile, compose, CI; untested) |
 | [testing.md](testing.md) | Run tests and the offline eval, and write new tests |
 | [evaluation.md](evaluation.md) | Score real RAG answers with RAGAS on a golden set and read the runs in Langfuse |
 | [corpus-manifest.md](corpus-manifest.md) | Track source documents and their licences |
@@ -62,7 +59,6 @@ Built and tested offline (482 tests, offline eval passing):
   tokens, "Forget me" ([memory.md](memory.md))
 - A `SandboxBackend` seam for code execution (only the local backend is included)
 - API keys, rate limiting, CORS, counters at `/v1/metrics`
-- Dockerfile, compose file, and CI workflow (written, not run)
 - Offline evals
 - Plain-language logs with loguru in `logs/YYYY-MM-DD/`, metadata only ([observability.md](observability.md))
 - Optional Langfuse traces per turn with scores (TTFT, total time, cache hit, guarded, degraded,
@@ -74,13 +70,13 @@ Built and tested offline (482 tests, offline eval passing):
 Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
 (memory uses bearer-like learner tokens instead), Langfuse dashboards and alerts, a hard sandbox boundary (needs
 a container or a remote sandbox adapter), LLM-written synthetic questions for ingestion,
-deployment automation, solved tracking across sessions and concept mastery for the learner model
+solved tracking across sessions and concept mastery for the learner model
 (fix detection within a session is built; see [pedagogy-policy.md](pedagogy-policy.md)).
 
 Run once for real: PDF ingestion with Docling and OpenAI embeddings, on the two PDFs in the
 corpus manifest.
 
 Not yet exercised against real services: OpenAI chat replies, mem0 memory extraction, Groq Whisper,
-Upstash Redis, the cross-encoder reranker, the Qdrant server mode, and the Docker files. The code
+Upstash Redis, the cross-encoder reranker, and the Qdrant server mode. The code
 follows each library's documentation and is covered by fakes and, for MCP and the sandbox, by real
 subprocesses, but treat the first live run as a test.

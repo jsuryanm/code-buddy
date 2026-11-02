@@ -5,7 +5,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    groups:
-      docker-actions:
-        patterns:
-          - "docker/*"

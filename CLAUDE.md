@@ -17,7 +17,7 @@ Live use needs `.env` (template `.env.example`). See [docs/](docs/README.md).
 
 ## State and docs
 
-Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP tools, API keys, rate limits, opt-in memory, fix detection, post-fix quiz, metadata-only Langfuse traces (`--extra trace`), RAGAS runner. Not built: instructor features, accounts, container-grade sandbox. Docker and live OpenAI, Groq, Upstash runs untested. [PROJECT_SPEC.md](PROJECT_SPEC.md) is the target design; `docs/` describes the code as built. Update both with design changes. `AGENTS.md`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.github/copilot-instructions.md`, `.opencode/` are generated; don't hand-edit.
+Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP tools, API keys, rate limits, opt-in memory, fix detection, post-fix quiz, metadata-only Langfuse traces (`--extra trace`), RAGAS runner. Not built: instructor features, accounts, container-grade sandbox. Live OpenAI, Groq, and Upstash runs untested. [PROJECT_SPEC.md](PROJECT_SPEC.md) is the target design; `docs/` describes the code as built. Update both with design changes. `AGENTS.md`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.github/copilot-instructions.md`, `.opencode/` are generated; don't hand-edit.
 
 ## Architecture rules
 

@@ -1,6 +1,6 @@
 # Testing and evaluation
 
-Everything below runs offline: no API keys, no network, no Docker.
+Everything below runs offline: no API keys and no network.
 
 ## Commands
 
@@ -126,7 +126,6 @@ Its tests inject the scoring function and fake the graph run and the Langfuse cl
 - The RAGAS runner's live path: ragas judge calls and the Langfuse cloud push
 - Live OpenAI, Groq, Upstash, and Qdrant-server behavior (needs your credentials). This includes
   real mem0 extraction: the offline tests check the calls we make, not what mem0 stores
-- The Docker files and CI workflow
 - The sandbox against a determined attacker (see [security.md](security.md))
 - The cross-encoder reranker (optional extra). Docling PDF ingestion was run by hand on the two
   real PDFs; the tests cover only the markdown clean-up (`tidy_docling_markdown`)

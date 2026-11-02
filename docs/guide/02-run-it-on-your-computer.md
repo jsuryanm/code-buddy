@@ -7,8 +7,7 @@ This page takes you from nothing to a working tutor in two stages:
 2. **Real mode.** Real OpenAI models and your own documents. Needs an OpenAI account and
    costs a little money per question.
 
-The reference page with every detail is [../setup.md](../setup.md). Docker is covered in
-[03-run-with-docker.md](03-run-with-docker.md); you do not need it for this page.
+The reference page with every detail is [../setup.md](../setup.md).
 
 ## 1. What you need first
 
@@ -317,7 +316,7 @@ chunks.
 | Mode | What it is | How to choose it |
 |---|---|---|
 | Embedded (default) | Files in `data/index/`, opened by the program itself. No server. One program at a time | Set nothing |
-| Server | A Qdrant server you run, for example in Docker | `CODEBUDDY_QDRANT_URL=http://localhost:6333` |
+| Server | A Qdrant server you run | `CODEBUDDY_QDRANT_URL=http://localhost:6333` |
 | Qdrant Cloud | A server hosted by Qdrant | The three variables below |
 
 For Qdrant Cloud, add to `.env`:
@@ -403,5 +402,4 @@ Without the secret, learner tokens stop working after every restart. Memory call
 stores personal data in `data/memory/`. Read [../memory.md](../memory.md) first. Not tested
 live.
 
-Next: [03-run-with-docker.md](03-run-with-docker.md), or skip to
-[04-logs-tracing-and-evaluation.md](04-logs-tracing-and-evaluation.md).
+Next: [04-logs-tracing-and-evaluation.md](04-logs-tracing-and-evaluation.md).

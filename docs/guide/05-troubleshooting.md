@@ -1,9 +1,7 @@
 # Troubleshooting
 
 Find your symptom in the left column. Each row says what is probably wrong and how to fix
-it. This page covers running on your own computer without Docker. For Docker, see
-[03-run-with-docker.md](03-run-with-docker.md). For a cloud server, see
-[../aws-free-tier.md](../aws-free-tier.md).
+it. This page covers running on your own computer.
 
 ## First, look at the log
 

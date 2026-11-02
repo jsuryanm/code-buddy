@@ -220,8 +220,8 @@ See [docs/testing.md](docs/testing.md).
 ## Status and limits
 
 The code is covered by offline tests and a keyless eval. Not yet exercised against live
-services: OpenAI chat replies, Groq Whisper, Upstash Redis, mem0 extraction, the Docker files,
-and PDF parsing beyond the two documents above. The sandbox is not a security boundary; do not
+services: OpenAI chat replies, Groq Whisper, Upstash Redis, mem0 extraction, and PDF parsing
+beyond the two documents above. The sandbox is not a security boundary; do not
 expose it to untrusted users. There are no user accounts (memory uses signed learner tokens),
 and instructor features are not built. Langfuse tracing (metadata only) is built but has not
 been run against the live Langfuse cloud. The RAGAS runner is tested with fakes only.
@@ -233,9 +233,7 @@ been run against the live Langfuse cloud. The RAGAS runner is tested with fakes 
 - [docs/architecture.md](docs/architecture.md), [docs/pedagogy-policy.md](docs/pedagogy-policy.md)
 - [docs/api.md](docs/api.md), [docs/tools-and-approvals.md](docs/tools-and-approvals.md)
 - [docs/memory.md](docs/memory.md), [docs/security.md](docs/security.md)
-- [docs/rag-and-ingestion.md](docs/rag-and-ingestion.md), [docs/deployment.md](docs/deployment.md)
-- [deploy/aws/](deploy/aws/README.md): AWS free-tier deployment, authored but never deployed
-  (beginner guide: [docs/aws-free-tier.md](docs/aws-free-tier.md))
+- [docs/rag-and-ingestion.md](docs/rag-and-ingestion.md)
 - [PROJECT_SPEC.md](PROJECT_SPEC.md): the target design
 
 ## Licences and permissions

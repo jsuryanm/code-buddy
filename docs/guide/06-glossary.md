@@ -88,11 +88,6 @@ Plural: corpora.
 A short reply written by code when every model [tier](#tier) failed. The turn counts for
 nothing: no hint step, no history, nothing cached.
 
-### Docker
-
-A tool that packages a program with everything it needs into a **container**, so it runs
-the same on any computer. See [03-run-with-docker.md](03-run-with-docker.md).
-
 ### Embedding
 
 A list of numbers that stands for the meaning of a piece of text. Texts with similar
@@ -255,7 +250,7 @@ The text sent to a model: instructions plus the material it should use.
 
 ### Prompt version
 
-A label (`CODEBUDDY_PROMPT_VERSION`, currently `p5`) that is part of every answer cache
+A label (`CODEBUDDY_PROMPT_VERSION`, currently `p6`) that is part of every answer cache
 key. Changing it after a prompt edit makes old cached answers stop matching.
 
 ### Pseudo-code

@@ -248,7 +248,6 @@ have their own lines.
 Instructor features: corpus approval queue, learner reports (12.4 surface 3). Per-user accounts.
 Langfuse dashboards and alerts (17.4; traces are built, see
 [observability.md](observability.md#langfuse-tracing)). Synthetic-question generation at ingestion (9.2). A hard sandbox
-boundary and deployment automation (17, see [security.md](security.md) and
-[deployment.md](deployment.md)). The L5 tool-result cache (10.3): tool runs depend on the learner's
+boundary (17, see [security.md](security.md)). The L5 tool-result cache (10.3): tool runs depend on the learner's
 code and are not cached. Concept-mastery scores and solved tracking across sessions for the learner model (8.6);
 memory keeps only private notes (see [memory.md](memory.md)).

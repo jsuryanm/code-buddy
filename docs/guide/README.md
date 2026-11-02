@@ -69,11 +69,9 @@ Searching a knowledge base and then asking a model to answer from what was found
 |---|---|---|
 | 1 | [01-how-the-tutor-works.md](01-how-the-tutor-works.md) | One learner turn as a story: every step, the hint ladder, Show answer, the quiz, memory, caches, models |
 | 2 | [02-run-it-on-your-computer.md](02-run-it-on-your-computer.md) | Install, try the keyless demo, then run it for real with your own keys and documents |
-| 3 | [03-run-with-docker.md](03-run-with-docker.md) | Run the same app in Docker containers |
-| 4 | [../aws-free-tier.md](../aws-free-tier.md) | Put it on a small AWS server on the free tier |
-| 5 | [04-logs-tracing-and-evaluation.md](04-logs-tracing-and-evaluation.md) | Read the logs, send traces to Langfuse, score answers with RAGAS |
-| 6 | [05-troubleshooting.md](05-troubleshooting.md) | Fix common problems: symptom, cause, fix |
-| 7 | [06-glossary.md](06-glossary.md) | Look up any word |
+| 3 | [04-logs-tracing-and-evaluation.md](04-logs-tracing-and-evaluation.md) | Read the logs, send traces to Langfuse, score answers with RAGAS |
+| 4 | [05-troubleshooting.md](05-troubleshooting.md) | Fix common problems: symptom, cause, fix |
+| 5 | [06-glossary.md](06-glossary.md) | Look up any word |
 
 ## I want to...
 
@@ -85,8 +83,6 @@ Searching a knowledge base and then asking a model to answer from what was found
 | Use real AI models | [02, real mode](02-run-it-on-your-computer.md#4-real-mode-the-env-file) |
 | Add my own documents | [02, adding documents](02-run-it-on-your-computer.md#6-add-documents-ingestion) |
 | Use Qdrant Cloud | [02, where the knowledge base lives](02-run-it-on-your-computer.md#7-where-the-knowledge-base-lives) |
-| Run it in Docker | [03-run-with-docker.md](03-run-with-docker.md) |
-| Put it on a server | [../aws-free-tier.md](../aws-free-tier.md) |
 | Find out what happened in one turn | [04, logs](04-logs-tracing-and-evaluation.md#1-logs-what-the-program-wrote-down) |
 | Measure answer quality | [04, RAGAS](04-logs-tracing-and-evaluation.md#3-ragas-scoring-answer-quality) |
 | Fix an error message | [05-troubleshooting.md](05-troubleshooting.md) |
@@ -102,7 +98,7 @@ Be honest with yourself about this before you rely on it.
 - The keyless demo runs for real on your computer.
 - Ingesting the two real PDFs with real OpenAI embeddings was run once by the author.
 - **Not tested live:** OpenAI chat replies, Groq voice, Upstash Redis, Langfuse cloud,
-  Qdrant Cloud, Docker, and AWS. The code follows each service's documentation, but treat
+  Qdrant Cloud. The code follows each service's documentation, but treat
   your first live run as a test.
 
 The full status list is in [../README.md](../README.md#status).
