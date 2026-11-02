@@ -5,6 +5,8 @@ Pure function. The LLM only verbalizes the chosen mode (spec Section 8).
 
 from __future__ import annotations
 
+import re
+
 from codebuddy.agent.code_analysis import PATTERNS, CodeFeatures
 from codebuddy.pedagogy.frustration import Signals
 from codebuddy.schemas import Decision, HintLevel, Intent, Mode, SessionProgress
@@ -39,6 +41,31 @@ def fixed_it(progress: SessionProgress, features: CodeFeatures | None, code_chan
         set(before["functions"]) <= set(features.functions)
         and features.statements >= FIX_KEEPS * before["statements"]
     )
+
+
+_QUESTION_START = re.compile(
+    r"^(what|why|how|which|who|when|where|can|could|should|would|do|does|did|is|are|was|were|"
+    r"tell|explain|show|give)\b",
+    re.IGNORECASE,
+)
+
+
+def answering_question(progress: SessionProgress, message: str, intent: Intent) -> bool:
+    """True when this message answers the question in the tutor's previous reply.
+
+    The classifier only sees a short answer like "30" and can call it a concept question. The
+    previous tutor turn is the signal: it ended with a question, and this message is not itself
+    a question. Explicit requests and new problems keep their own mode.
+    """
+    if intent in (Intent.SHOW_ANSWER, Intent.OFF_TOPIC, Intent.PROBLEM_START):
+        return False
+    if not progress.history:
+        return False
+    text = message.strip()
+    if not text or text.endswith("?") or _QUESTION_START.match(text):
+        return False
+    last = progress.history[-1]
+    return last.get("role") == "tutor" and last.get("text", "").rstrip().endswith("?")
 
 
 def decide_mode(

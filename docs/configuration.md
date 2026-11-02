@@ -40,7 +40,7 @@ Fallback chain: heavy, then standard, then fast, then degraded mode (see
 | Name | Default | Meaning |
 |---|---|---|
 | `INDEX_VERSION` | `v1` | Part of the Qdrant collection name (`<prefix>_<corpus>_<version>`, prefix `cb` by default) and of answer and retrieval cache keys. Bump it after re-chunking or changing the embedding model |
-| `PROMPT_VERSION` | `p5` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
+| `PROMPT_VERSION` | `p6` | Part of answer cache keys. Bump it after editing prompts so old cached answers stop matching |
 
 ### Pedagogy
 

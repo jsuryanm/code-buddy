@@ -58,6 +58,7 @@ class Decision(BaseModel):
     offer_quiz: bool = False  # UI shows the Try-a-quiz button (after a fix is detected)
     quiz_concept: str | None = None  # concept name of the fixed bug, never the pattern id
     after_fix: bool = False  # CONFIRM follow-up: acknowledge the learner's explanation
+    answering: bool = False  # the learner answered the question in the previous tutor reply
     quiz: dict | None = None  # {"index", "total", "difficulty", "score"} while a quiz runs
     reasons: list[str] = Field(default_factory=list)
 

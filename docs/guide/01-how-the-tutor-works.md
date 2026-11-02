@@ -374,7 +374,7 @@ when you set its keys, otherwise in the API's own memory.
 Never cached: hints and reveals. Cache keys include the hint level, the mode, the index
 version, the prompt version and the model versions, so a changed prompt or a new book never
 serves an old answer. After editing a prompt, the version `CODEBUDDY_PROMPT_VERSION`
-(currently `p5`) is bumped for that reason.
+(currently `p6`) is bumped for that reason.
 
 ## Models, tiers and fallbacks
 

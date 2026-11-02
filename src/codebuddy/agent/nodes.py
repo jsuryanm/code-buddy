@@ -26,7 +26,13 @@ from codebuddy.memory.types import Episode
 from codebuddy.observability import tracing
 from codebuddy.pedagogy.frustration import detect_signals
 from codebuddy.pedagogy.guard import LeakDetected, StreamGuard
-from codebuddy.pedagogy.policy import SHOW_AFTER_HINTS, decide_mode, fixed_it, shape
+from codebuddy.pedagogy.policy import (
+    SHOW_AFTER_HINTS,
+    answering_question,
+    decide_mode,
+    fixed_it,
+    shape,
+)
 from codebuddy.pedagogy.quiz import advance, quiz_meta
 from codebuddy.pedagogy.templates import (
     degraded_text,
@@ -361,6 +367,12 @@ class TutorNodes:
                 max_turns=s.ladder_max_turns,
                 max_seconds=s.ladder_max_seconds,
             )
+            if not decision.after_fix:  # the fix reflection has its own acknowledgement prompt
+                decision.answering = answering_question(
+                    progress, state["message"], state["classification"].intent
+                )
+            if decision.answering:
+                decision.reasons.append("answering previous question")
         if progress.quiz is not None:
             decision.quiz, decision.can_show_answer = quiz_meta(progress.quiz), False
         emit_step(writer, "policy", "done", self._decision_detail(decision))
@@ -460,6 +472,8 @@ class TutorNodes:
 
     @staticmethod
     def _tier(decision: Decision) -> str:
+        if decision.answering:
+            return "heavy"  # judging a free-text answer needs the stronger model
         if decision.mode is Mode.REVEAL:
             return "heavy"
         if decision.mode is Mode.REDIRECT:

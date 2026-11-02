@@ -130,6 +130,20 @@ AFTER_FIX_RULE = (
     "code). Then say the short quiz on the same kind of bug is still available."
 )
 
+ANSWER_RULE = (
+    "The learner is answering the question in your previous reply. Judge it first. Work out the "
+    "expected answer from the question you asked, not from what their code prints. If it is "
+    "correct, say 'Correct.' and give a brief two-line reason why. Do not re-explain the concept "
+    "and do not repeat the previous question. Then ask exactly one next question. If it is wrong "
+    "or incomplete, say what is missing in one or two sentences, without writing corrected code, "
+    "then ask one question that helps."
+)
+
+ANSWER_EXPLAIN_RULE = (
+    ANSWER_RULE + " Use at most 120 words and plain words; skip the normal explanation when the "
+    "answer is correct."
+)
+
 OFFER_LINE = (
     "End by saying, warmly, that they can press 'Show answer' whenever they want the full "
     "solution, and that struggling with this is normal."
@@ -140,6 +154,8 @@ def system_prompt(decision: Decision, stage: PcditStage) -> str:
     parts = [BASE.format(stage_name=STAGE_NAMES[stage]), STYLE_RULE]
     if decision.mode is Mode.HINT and decision.level is not None:
         parts.append(f"Hint level {int(decision.level)}: {LEVEL_RULES[decision.level]}")
+        if decision.answering:
+            parts.append(ANSWER_RULE)
         if decision.level is HintLevel.NAME_CONCEPT:
             parts.append(ERROR_TEMPLATE)
         parts.append("Stage question ideas: " + " | ".join(STAGE_QUESTIONS[stage]))
@@ -152,8 +168,10 @@ def system_prompt(decision: Decision, stage: PcditStage) -> str:
         parts.append(AFTER_FIX_RULE if decision.after_fix else CONFIRM_RULE)
     elif decision.mode is Mode.EXPLAIN:
         parts.append(
-            "Explain the concept directly and concisely (at most 120 words) from the context. "
-            "A short example is fine. Finish with one question that checks understanding."
+            ANSWER_EXPLAIN_RULE
+            if decision.answering
+            else "Explain the concept directly and concisely (at most 120 words) from the "
+            "context. A short example is fine. Finish with one question that checks understanding."
         )
     elif decision.mode is Mode.REDIRECT:
         parts.append(

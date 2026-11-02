@@ -2,6 +2,7 @@ import pytest
 
 from codebuddy.config import Settings
 from codebuddy.pedagogy.templates import (
+    ANSWER_EXPLAIN_RULE,
     EARLY_HINT_RULE,
     ERROR_TEMPLATE,
     LEVEL_RULES,
@@ -34,7 +35,7 @@ def test_hint_levels_add_depth_step_by_step():
 
 
 def test_prompt_version_was_bumped_with_the_prompt_change():
-    assert Settings().prompt_version == "p5"
+    assert Settings().prompt_version == "p6"
 
 
 LIMITS = {
@@ -61,6 +62,19 @@ def test_explain_reveal_and_redirect_prompts_carry_style_and_limits():
     assert "Show the complete corrected solution" in reveal
     redirect = system_prompt(Decision(mode=Mode.REDIRECT), PcditStage.I)
     assert STYLE_RULE in redirect and "two sentences" in redirect
+
+
+def test_an_answer_to_the_tutors_question_must_be_acknowledged_not_ignored():
+    hint = system_prompt(
+        Decision(mode=Mode.HINT, level=HintLevel.DIAGNOSE, answering=True), PcditStage.T
+    )
+    assert "answering the question" in hint
+    assert "say 'Correct.'" in hint and "two-line reason why" in hint
+    assert "ask exactly one next question" in hint
+    explain = system_prompt(Decision(mode=Mode.EXPLAIN, answering=True), PcditStage.T)
+    assert ANSWER_EXPLAIN_RULE in explain
+    assert "Explain the concept directly" not in explain
+    assert "Do not re-explain the concept" in explain
 
 
 def test_error_template_fits_the_name_concept_limit():

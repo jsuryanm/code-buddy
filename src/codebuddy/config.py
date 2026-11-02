@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Versions folded into cache keys so stale answers invalidate automatically
     index_version: str = "v1"
-    prompt_version: str = "p5"
+    prompt_version: str = "p6"
 
     # Hint ladder escalation (spec 8.4)
     ladder_max_turns: int = 6

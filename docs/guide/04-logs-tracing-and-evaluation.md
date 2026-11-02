@@ -282,7 +282,7 @@ Not tested live: the runner was tested with fakes only. Treat your first run as 
   question with its passages, reply and scores). A score shown as `-` means that metric
   failed on that item; the run continues.
 - In Langfuse, the dataset `codebuddy-ragas` holds the questions. Each run is named like
-  `p5-sample-20261102T081500Z` (prompt version, index version, time), so you can compare two
+  `p6-sample-20261102T081500Z` (prompt version, index version, time), so you can compare two
   runs side by side, for example before and after a prompt change.
 
 Rough guide: low faithfulness means the tutor says things the book does not; low context

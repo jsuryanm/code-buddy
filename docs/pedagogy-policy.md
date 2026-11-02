@@ -54,7 +54,19 @@ settings `MAX_TOKENS_*`). The cap is passed per call, by mode and not by tier, a
 reply that hits the cap is cut off mid-sentence; the caps are set well above the word limits so
 this only happens when the model ignores them. `PROMPT_VERSION` became `p3` with this change (plus
 the classifier prompt that now sees recent history), then `p4` (the early-hint rule above), and is
-now `p5` (the reply after a fix, `AFTER_FIX_RULE`, below).
+now `p6` (acknowledging an answer to the tutor's previous question, below).
+
+## Answering the tutor's question
+
+When the previous tutor reply ended with a question and the learner's new message is not itself
+a question, the policy sets `Decision.answering`. Explicit show-answer requests, off-topic
+messages, and new problems are excluded. The prompt then judges the answer. A correct answer
+gets "Correct." and a brief two-line reason why, with no re-explanation and no repeated question;
+then exactly one next question. A wrong or incomplete answer gets what is missing, without
+corrected code, then one helping question. In `explain` mode the normal explanation rule is
+replaced. The model judges correctness; the code does not grade a free-text answer. These turns
+run on the heavy tier, because judging a free-text answer needs more reasoning than wording a
+hint. The hint level still comes from `hints_given`.
 
 ## When the answer is offered
 

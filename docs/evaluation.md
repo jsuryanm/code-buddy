@@ -143,7 +143,7 @@ In Langfuse (when keys are set):
   expected output `reference` and metadata `expected_section`. The item id is a hash of the
   question, so a rerun updates the item instead of adding a copy.
 - **Runs**: each run is named `<prompt_version>-<index_version>-<UTC time>`, for example
-  `p5-sample-20261102T081500Z`. Open the dataset's runs and compare two of them to see the
+  `p6-sample-20261102T081500Z`. Open the dataset's runs and compare two of them to see the
   per-metric means side by side, for example before and after a prompt or index change.
 - **Traces**: one `ragas-item` trace per item, with a `retrieve` observation (passages and their
   sources) and a `generate` observation (the passages in, the reply out). Each metric is a

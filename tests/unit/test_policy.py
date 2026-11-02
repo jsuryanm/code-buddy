@@ -3,12 +3,26 @@ import pytest
 from codebuddy.agent.code_analysis import analyze
 from codebuddy.config import Settings
 from codebuddy.pedagogy.frustration import Signals, asks_for_answer, detect_signals
-from codebuddy.pedagogy.policy import decide_mode, fixed_it, shape
+from codebuddy.pedagogy.policy import answering_question, decide_mode, fixed_it, shape
 from codebuddy.schemas import HintLevel, Intent, Mode, SessionProgress
 
 
 def progress(**kw) -> SessionProgress:
     return SessionProgress(session_id="s", **kw)
+
+
+def tutor_asked(question: str = "What should total be?") -> SessionProgress:
+    return progress(history=[{"role": "tutor", "text": question, "at": "1"}])
+
+
+def test_a_short_reply_to_the_tutors_question_is_marked_as_an_answer():
+    p = tutor_asked()
+    assert answering_question(p, "30", Intent.CONCEPT_QUESTION)
+    assert answering_question(p, "it is 30", Intent.DEBUG_HELP)
+    assert not answering_question(p, "why is that?", Intent.CONCEPT_QUESTION)  # a new question
+    assert not answering_question(p, "what is a loop", Intent.CONCEPT_QUESTION)
+    assert not answering_question(progress(), "30", Intent.CONCEPT_QUESTION)  # no question asked
+    assert not answering_question(p, "30", Intent.SHOW_ANSWER)  # explicit request wins
 
 
 def test_first_debug_turn_is_diagnostic_question():

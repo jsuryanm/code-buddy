@@ -176,7 +176,7 @@ async def test_concept_answers_are_cached_but_hints_are_not(make_harness):
     assert len(model.calls) == 1
 
     hint_model = ScriptedChat(["Q?", "Q?"])
-    h2 = make_harness(standard=hint_model)
+    h2 = make_harness(standard=hint_model, heavy=hint_model)
     await h2.turn("why is this wrong", code=BUGGY)
     await h2.turn("why is this wrong", code=BUGGY)
     assert len(hint_model.calls) == 2
@@ -184,11 +184,31 @@ async def test_concept_answers_are_cached_but_hints_are_not(make_harness):
 
 async def test_conversation_history_reaches_the_next_prompt(make_harness):
     model = ScriptedChat(["What is i at the end?", "Good, so what next?"])
-    h = make_harness(standard=model)
+    h = make_harness(standard=model, heavy=model)
     await h.turn("sum is wrong", code=BUGGY)
     await h.turn("I think i is 3", code=BUGGY)
     _, human = model.calls[1]
     assert "What is i at the end?" in human[1] and "I think i is 3" in human[1]
+
+
+async def test_an_answer_to_the_tutors_question_is_prompted_to_be_acknowledged(make_harness):
+    model = ScriptedChat(["What should total be?", "Yes, 30. What does your code print?"])
+    h = make_harness(standard=model, heavy=model)
+    await h.turn("my sum crashes", code=BUGGY)
+    out = await h.turn("30", code=BUGGY)
+    assert out["state"]["decision"].answering
+    system, _ = model.calls[1]
+    assert "answering the question" in system[1]
+    assert "say 'Correct.'" in system[1]
+    assert "ask exactly one next question" in system[1]
+
+
+async def test_a_new_question_after_the_tutors_question_is_not_marked_as_an_answer(make_harness):
+    model = ScriptedChat(["What should total be?", "Range gives the loop its indices."])
+    h = make_harness(standard=model)
+    await h.turn("my sum crashes", code=BUGGY)
+    out = await h.turn("why does range stop early?", code=BUGGY)
+    assert not out["state"]["decision"].answering
 
 
 async def test_citations_come_from_retrieval(make_harness):
