@@ -7,7 +7,7 @@
 - A Groq API key (optional, for voice input)
 - An Upstash Redis database (optional; without it the API uses an in-process cache)
 - Network access on first run: the BM25 sparse model (`Qdrant/bm25`) is downloaded by `fastembed`
-- No Docker needed. Qdrant runs embedded, as files under `data/index/`
+- No Docker needed. Qdrant runs embedded, as files under `data/index/`. Optional local Docker: see [deployment.md](deployment.md)
 
 ## Install
 

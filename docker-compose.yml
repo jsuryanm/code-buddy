@@ -1,38 +1,115 @@
-# Untested sketch of a three-service deployment: Qdrant server, API, Streamlit UI.
-# Put secrets in .env (OPENAI_API_KEY, GROQ_API_KEY, UPSTASH_*, CODEBUDDY_*), never in this file.
+# Local development and local testing: Qdrant server, API, Streamlit UI, one-off ingestion,
+# and a keyless demo. Authored and statically checked (tests/unit/test_deploy_files.py),
+# but never built or run: the dev shell had no Docker daemon. See docs/deployment.md.
+#
+# Secrets live in .env (copy env.example), never here. Needs Docker Compose 2.24+ for the
+# optional env_file. Ports bind to 127.0.0.1 only.
+#
+#   docker compose up --build -d               qdrant + api + ui
+#   docker compose up --build api-demo ui      keyless demo (no qdrant, no keys)
+#   docker compose --profile ingest run --rm ingest data/raw/x.pdf --corpus fundamentals --title X
+#
+# Qdrant Cloud instead of the local server: set QDRANT_CLUSTER_ENDPOINT (and QDRANT_API_KEY) in
+# .env and start with `docker compose up -d --no-deps api ui`.
+
+x-app: &app
+  build:
+    context: .
+    args:
+      EXTRAS: "--extra ui --extra trace"   # add "--extra pdf" to ingest PDFs (several GB)
+  image: codebuddy:local
+  env_file:
+    - path: .env
+      required: false
+  restart: unless-stopped
+  pids_limit: 256
+
+x-qdrant-env: &qdrant-env
+  CODEBUDDY_QDRANT_URL: ${QDRANT_CLUSTER_ENDPOINT:-http://qdrant:6333}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cb}
+
 services:
   qdrant:
     image: qdrant/qdrant:v1.15.0   # pin to the server version you test against
     volumes:
       - qdrant-data:/qdrant/storage
+    healthcheck:
+      # the image has bash but no curl: open a TCP connection to the REST port
+      test: ["CMD", "bash", "-c", ":> /dev/tcp/127.0.0.1/6333"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    mem_limit: 1g
+    pids_limit: 512
     restart: unless-stopped
 
   api:
-    build: .
-    env_file: .env
+    <<: *app
     environment:
-      CODEBUDDY_QDRANT_URL: http://qdrant:6333
-      CODEBUDDY_CHECKPOINT_PATH: /app/data/checkpoints.sqlite
+      <<: *qdrant-env
     volumes:
+      - ./logs:/app/logs
       - app-data:/app/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
-      - qdrant
-    restart: unless-stopped
+      qdrant:
+        condition: service_healthy
+    mem_limit: 2g
 
   ui:
-    build: .
+    <<: *app
     command: ["streamlit", "run", "src/codebuddy/ui/app.py", "--server.port", "8501",
               "--server.address", "0.0.0.0", "--server.headless", "true"]
     environment:
       CODEBUDDY_API_URL: http://api:8000
       CODEBUDDY_API_KEY: ${CODEBUDDY_API_KEY:-}
+    volumes:
+      - ./logs:/app/logs
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+    mem_limit: 512m
+
+  # Keyless demo: scripted tutor, sample corpus, no OpenAI/Qdrant. It takes the network name
+  # `api`, so start it instead of the real api: `docker compose up --build api-demo ui`.
+  api-demo:
+    <<: *app
+    profiles: ["demo"]
+    command: ["uvicorn", "codebuddy.api.demo:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: []
+    networks:
+      default:
+        aliases: [api]
+    volumes:
+      - ./logs:/app/logs
+    ports:
+      - "127.0.0.1:8000:8000"
+    mem_limit: 1g
+
+  # One-off ingestion: arguments after `ingest` go to codebuddy.rag.ingest. Put files in ./data/raw.
+  ingest:
+    <<: *app
+    profiles: ["ingest"]
+    entrypoint: ["python", "-m", "codebuddy.rag.ingest"]
+    restart: "no"
+    environment:
+      <<: *qdrant-env
+    volumes:
+      - ./logs:/app/logs
+      - app-data:/app/data
+      - ./data/raw:/app/data/raw:ro
     depends_on:
-      - api
-    restart: unless-stopped
+      qdrant:
+        condition: service_healthy
+    mem_limit: 2g
 
 volumes:
   qdrant-data:
