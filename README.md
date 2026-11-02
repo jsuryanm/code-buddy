@@ -232,6 +232,8 @@ been run against the live Langfuse cloud. The RAGAS runner is tested with fakes 
 - [docs/api.md](docs/api.md), [docs/tools-and-approvals.md](docs/tools-and-approvals.md)
 - [docs/memory.md](docs/memory.md), [docs/security.md](docs/security.md)
 - [docs/rag-and-ingestion.md](docs/rag-and-ingestion.md), [docs/deployment.md](docs/deployment.md)
+- [deploy/aws/](deploy/aws/README.md): AWS free-tier deployment, authored but never deployed
+  (beginner guide `docs/aws-free-tier.md` coming)
 - [PROJECT_SPEC.md](PROJECT_SPEC.md): the target design
 
 ## Licences and permissions

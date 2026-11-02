@@ -198,7 +198,7 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and
 | Evaluation (16) | Offline eval and CI gate built. A manual RAGAS runner (faithfulness, answer relevancy, context precision and recall) on a 20-item golden set, with runs in Langfuse, is built and tested with fakes, not run live (`docs/evaluation.md`). Human review, A/B tests, and the learner pilot are not |
 | Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved tracking across sessions, Postgres persistence, and accounts are not built. See `docs/memory.md` |
 | Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |
-| Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested), loguru logs and optional Langfuse traces, both metadata only (17.4). No alerts, accounts, or deployment automation |
+| Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested), loguru logs and optional Langfuse traces, both metadata only (17.4). AWS free-tier deployment authored, not deployed: one EC2 instance with Caddy, SSM secrets and a GHCR image (17.3, ADR 0010). No alerts, accounts, or autoscaling |
 
 ### Key design principle
 
@@ -1287,6 +1287,12 @@ secret manager; no secrets in code.
   explanation → friendly error with retry.
 - Backups: Postgres PITR; Qdrant snapshots; re-ingestion pipeline is reproducible
   from source documents.
+
+> **Status:** a first deployment target is authored but has not been deployed (ADR 0010,
+> `deploy/aws/`): one EC2 instance on the AWS free plan runs the API, the Streamlit UI and Caddy
+> (HTTPS through Let's Encrypt, basic auth on the whole site; the API is not published) from an
+> image that GitHub Actions pushes to ghcr.io. Secrets come from SSM Parameter Store; Qdrant
+> Cloud, Upstash and Langfuse stay external. No staging, canary, autoscaling or backups yet.
 
 ### 17.4 Observability and alerting
 
