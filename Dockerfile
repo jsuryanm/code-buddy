@@ -6,7 +6,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="CodeBuddy" \
       org.opencontainers.image.description="Socratic Python tutor: API, Streamlit UI, ingestion" \
-      org.opencontainers.image.source="https://github.com/jayasuryan-mutyala/code-buddy" \
+      org.opencontainers.image.source="https://github.com/jsuryanm/code-buddy" \
       org.opencontainers.image.licenses="NOASSERTION"
 
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
