@@ -135,6 +135,11 @@ The offline eval's `retrieval_recall` uses the same path: `build_query` with the
 and fusion for cases that carry a scripted `search_query` (standing in for the classifier) and
 `history`.
 
+That recall is a substring check with fake embeddings. To judge retrieval and answers with the
+real models (context precision and recall, faithfulness, answer relevancy), run the manual RAGAS
+runner; see [evaluation.md](evaluation.md). After adding material, also add golden questions for
+it there.
+
 ### Rerankers
 
 | Reranker | Use | Scores |

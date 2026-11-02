@@ -195,7 +195,7 @@ Slice 1 is built and tested offline; see `docs/README.md` for the full list and
 | LLM routing (11) | Built as in-app tiers with fallbacks; no gateway (ADR 0001) |
 | Agent, MCP, tools, human in the loop (12) | Three tools over MCP, rule-planned, learner approval before code runs, durable checkpoints (SQLite instead of Postgres). Instructor surfaces not built |
 | Speech-to-text (13) | Groq Whisper with optional OpenAI fallback behind `/v1/stt`; voice recording in the Streamlit chat input with an editable transcript. Utterances are whole recordings, not voice-activity-detected chunks |
-| Evaluation (16) | Offline eval and CI gate built. Human review, A/B tests, and the learner pilot are not |
+| Evaluation (16) | Offline eval and CI gate built. A manual RAGAS runner (faithfulness, answer relevancy, context precision and recall) on a 20-item golden set, with runs in Langfuse, is built and tested with fakes, not run live (`docs/evaluation.md`). Human review, A/B tests, and the learner pilot are not |
 | Learner memory (8.6, 12.2) | Built, off by default and opt-in per learner: mem0 over embedded Qdrant, signed learner tokens, "Forget me", private notes only. Concept mastery, solved tracking across sessions, Postgres persistence, and accounts are not built. See `docs/memory.md` |
 | Sandbox backends (12.4, 18) | A `SandboxBackend` seam with the subprocess sandbox as the only backend (ADR 0007). No remote adapter is included or tested |
 | Security and operations (17, 18) | API keys, rate limits, CORS, metrics, sandbox, Dockerfile and compose (untested), loguru logs and optional Langfuse traces, both metadata only (17.4). No alerts, accounts, or deployment automation |
@@ -1243,6 +1243,15 @@ Evaluation is split into **retrieval quality**, **generation quality**, **pedago
   chatbot, measuring learning (not just satisfaction).
 - **Regression on index updates**: retrieval eval runs automatically before
   alias swap (Section 9.2).
+
+> **Status:** the offline eval (`eval/run.py`) is the CI gate: leak rate, guard, bug patterns,
+> escalation, fix detection and a substring retrieval recall, all with fake models. RAGAS runs
+> manually, not on every PR as 16.3 plans (`eval/ragas_run.py`, `docs/evaluation.md`): the real
+> graph answers golden concept questions, the standard-tier model judges, and runs go to a JSON
+> file and the Langfuse dataset `codebuddy-ragas`. The golden set has 20 items from the sample
+> text, not 200-300. `--generate-draft` drafts items from the real index for human review.
+> ragas lives in its own environment because it cannot join the main lock without downgrading
+> openai. Untested against live services.
 
 ### 16.4 Key tension to monitor
 

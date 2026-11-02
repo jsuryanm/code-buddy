@@ -1,7 +1,7 @@
 # 0009. Logs with loguru, traces with Langfuse, RAG scores with RAGAS
 
-Status: accepted. Logs and Langfuse tracing are built; the RAGAS runner is planned in this change
-set and not built yet. Date: 2026-11-02.
+Status: accepted. Logs, Langfuse tracing and the RAGAS runner are built (the runner is tested
+with fakes only). Date: 2026-11-02.
 
 ## Context
 No logging was configured: the `codebuddy.*` stdlib loggers had no handler, so INFO lines (the
@@ -31,10 +31,18 @@ handles learner text and code, which must not leave the process through logs or 
   async generator and LangGraph runs nodes in separate tasks. Off without keys, with
   `CODEBUDDY_TRACING_ENABLED=false`, or without the extra; every tracer call is wrapped so
   failures never break a turn.
-- **RAG evaluation (planned).** A separate, manual, paid runner (`eval/ragas_run.py`) scores the
-  real graph on a golden set with RAGAS (faithfulness, response relevancy, context precision and
-  recall) and pushes scores to Langfuse. Golden questions are not learner data, so those traces may
-  carry content. It is never part of `pytest` or CI.
+- **RAG evaluation (built).** A separate, manual, paid runner (`eval/ragas_run.py`) scores the
+  real graph on a golden set with RAGAS (faithfulness, answer relevancy, context precision and
+  recall) and pushes datasets, traces and scores to Langfuse with its own client. Golden questions
+  are not learner data, so those traces carry content; learner turns never do. It is never part of
+  `pytest` or CI. It uses `ragas.metrics.collections` with `llm_factory` (the legacy `evaluate()`
+  wrappers are deprecated). **ragas is not in the main lock:** its `instructor` dependency caps
+  `jiter` below 0.15, which would downgrade openai from 3.41 to 3.3.0 (also `rich` and `fsspec`).
+  It is installed into a separate `.venv-evals` by `evals/setup.sh`, constrained to `uv.lock` with
+  those upper bounds overridden (`evals/overrides.txt`). That environment also gets
+  `langchain-community` 0.4.1 (ragas 0.4.3 imports a module removed in 0.4.2), which pulls in
+  `langchain-classic`. This ADR accepts `langchain-classic` there only; the application never
+  imports it and the main lock does not contain it.
 
 ## Alternatives not taken
 - stdlib `logging.config` only: workable, but rotation, JSON output, per-record context
@@ -44,6 +52,11 @@ handles learner text and code, which must not leave the process through logs or 
 - Langfuse's LangChain callback with masking: easiest to wire, but it sends prompts, code and
   replies by default, and masking third-party spans is not guaranteed.
 - OpenTelemetry directly: more setup for the same metadata; Langfuse v4 is OTel-based anyway.
+- ragas as an optional extra in the main lock: it downgrades openai (see above).
+- `uv run --isolated --with ragas`: resolves ragas on its own, so the overlay gets the old openai
+  and the broken langchain-community 0.4.2.
+- Scoring with Langfuse's built-in evaluators or our own judge prompts: more code to keep calibrated;
+  RAGAS metrics are standard and comparable.
 
 ## Consequences
 - A turn can be followed line by line with `grep turn=<id>`; see `docs/observability.md`.
@@ -51,5 +64,7 @@ handles learner text and code, which must not leave the process through logs or 
   microseconds. Not yet run against the live Langfuse cloud.
 - Each log record costs about 90 microseconds on the calling thread with enqueued sinks (measured;
   10 microseconds without `enqueue`), so roughly 1 to 2 ms per turn before the first token.
+- RAGAS runs need `bash evals/setup.sh` and cost about items x (6 + passages) judge calls; the
+  overridden bounds (jiter, rich, fsspec) were checked by import and an offline scorer run only.
 - Exception messages from libraries in `.errors.log` tracebacks can still echo request details.
   The leak judge logs only the flag, hashed session and level; never its reason text.

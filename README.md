@@ -58,6 +58,7 @@ question and gives up.
 **Safety and operations**
 - Answer-leak guard, API keys, rate limits, CORS, and metrics at `/v1/metrics`
 - An offline eval that runs without keys
+- A manual RAGAS evaluation of real answers on a golden set, with runs in Langfuse
 
 ## How one turn works
 
@@ -206,7 +207,11 @@ docs/         Documentation and decision records
 uv run pytest -q                       # all tests, offline
 uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run    # offline eval, must print PASS
+bash evals/setup.sh && .venv-evals/bin/python -m codebuddy.eval.ragas_run --index sample --limit 3
 ```
+
+The second line is the RAGAS runner. It makes paid OpenAI calls and has its own environment; see
+[docs/evaluation.md](docs/evaluation.md).
 
 See [docs/testing.md](docs/testing.md).
 
@@ -217,7 +222,7 @@ services: OpenAI chat replies, Groq Whisper, Upstash Redis, mem0 extraction, the
 and PDF parsing beyond the two documents above. The sandbox is not a security boundary; do not
 expose it to untrusted users. There are no user accounts (memory uses signed learner tokens),
 and instructor features are not built. Langfuse tracing (metadata only) is built but has not
-been run against the live Langfuse cloud.
+been run against the live Langfuse cloud. The RAGAS runner is tested with fakes only.
 
 ## Documentation
 

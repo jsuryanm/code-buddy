@@ -10,13 +10,14 @@ uv run ruff check . && uv run ruff format --check .
 uv run python -m codebuddy.eval.run                 # eval, must PASS
 uv run uvicorn codebuddy.api.demo:app --port 8000   # keyless demo
 uv run streamlit run src/codebuddy/ui/app.py
+.venv-evals/bin/python -m codebuddy.eval.ragas_run  # paid, evals/setup.sh
 ```
 
 Live use needs `.env` (template `.env.example`). See [docs/](docs/README.md).
 
 ## State and docs
 
-Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP tools, API keys, rate limits, opt-in memory, fix detection, post-fix quiz, metadata-only Langfuse traces (`--extra trace`). Not built: instructor features, accounts, container-grade sandbox. Docker and live OpenAI, Groq, Upstash runs untested. [PROJECT_SPEC.md](PROJECT_SPEC.md) is the target design; `docs/` describes the code as built. Update both with design changes. `AGENTS.md`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.github/copilot-instructions.md`, `.opencode/` are generated; don't hand-edit.
+Built: API, tutor graph, RAG, caches, Streamlit UI, Groq voice, approved MCP tools, API keys, rate limits, opt-in memory, fix detection, post-fix quiz, metadata-only Langfuse traces (`--extra trace`), RAGAS runner. Not built: instructor features, accounts, container-grade sandbox. Docker and live OpenAI, Groq, Upstash runs untested. [PROJECT_SPEC.md](PROJECT_SPEC.md) is the target design; `docs/` describes the code as built. Update both with design changes. `AGENTS.md`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.github/copilot-instructions.md`, `.opencode/` are generated; don't hand-edit.
 
 ## Architecture rules
 

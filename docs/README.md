@@ -19,6 +19,7 @@ Socratic hints instead of handing out answers, and always lets them reach the fu
 | [security.md](security.md) | Know what is protected, what is not, and what to do before going public |
 | [deployment.md](deployment.md) | Containerize and run it (Dockerfile, compose, CI; untested) |
 | [testing.md](testing.md) | Run tests and the offline eval, and write new tests |
+| [evaluation.md](evaluation.md) | Score real RAG answers with RAGAS on a golden set and read the runs in Langfuse |
 | [corpus-manifest.md](corpus-manifest.md) | Track source documents and their licences |
 | [adr/](adr/) | Read why key decisions were made |
 
@@ -48,6 +49,9 @@ Built and tested offline (482 tests, offline eval passing):
 - Plain-language logs with loguru in `logs/YYYY-MM-DD/`, metadata only ([observability.md](observability.md))
 - Optional Langfuse traces per turn with scores (TTFT, total time, cache hit, guarded, degraded,
   quiz), metadata only (`--extra trace`, [observability.md](observability.md#langfuse-tracing))
+- A manual RAGAS runner on a 20-item golden set (faithfulness, answer relevancy, context precision
+  and recall), reported to a JSON file and Langfuse; tested with fakes only, not run live
+  ([evaluation.md](evaluation.md))
 
 Not built yet: instructor features (corpus approval queue, learner reports), per-user accounts
 (memory uses bearer-like learner tokens instead), Langfuse dashboards and alerts, a hard sandbox boundary (needs

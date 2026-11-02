@@ -53,6 +53,7 @@ their own sinks and a temporary log folder. `caplog` tests keep using the stdlib
 | `tests/integration/test_ui_quiz.py` | Try a quiz only after a confirmed fix, the snippet in the code box, the quiz caption, Skip question and Stop quiz with their actions, the learner's code restored after Stop and after the summary, Show answer from the server's flag only |
 | `tests/integration/test_eval.py` | The offline eval meets its thresholds |
 | `tests/unit/test_observability.py` | `setup_logging`: dated file names, idempotent, JSON optional, stderr-only fallback, stdlib lines bridged and third-party INFO kept out; `prune_logs` with a fake clock (old files and empty day folders go, symlinks and other files stay); access-log path redaction; whitelisted summaries; config summary without secrets; failure hints; tool call lines |
+| `tests/unit/test_ragas_run.py` | RAGAS runner without ragas or network: golden set loads and its sections exist in the sample, loader rejections, samples from a graph run (passages cut to `PASSAGE_CHARS`, reply, timings), the real graph on the offline sample (explain mode, no answer-cache hit between items), per-item deps, means, JSON report and config, console table, Langfuse push to a fake client (dataset items, traces with `retrieve` and `generate`, run links, scores per trace), drafts marked `auto_generated`, CLI refusals, injected scorer, `--fail-under` exit codes, and importing the runner loads neither ragas nor langfuse |
 | `tests/integration/test_logging_flow.py` | Every node logs enter and exit with a duration and the turn and session tags; the sentinel privacy test (no message, code, reply, learner token, learner id or raw session id in any sink or file); the production lifespan sets up logging and injected deps do not |
 
 ## Fakes (no real models)
@@ -113,8 +114,16 @@ and `retrieval.jsonl` (queries with expected text).
 These measure the machinery with fake models. They do not rate the quality of a real model's
 questions. For that, run real conversations and have an instructor score them (spec Section 16.3).
 
+## RAGAS runner (manual, paid)
+
+`eval/ragas_run.py` scores real answers with RAGAS on `eval/golden/ragas.jsonl`. It needs
+OpenAI keys and its own environment (`bash evals/setup.sh`), so it is not part of `pytest` or CI.
+Its tests inject the scoring function and fake the graph run and the Langfuse client. See
+[evaluation.md](evaluation.md).
+
 ## Not tested
 
+- The RAGAS runner's live path: ragas judge calls and the Langfuse cloud push
 - Live OpenAI, Groq, Upstash, and Qdrant-server behavior (needs your credentials). This includes
   real mem0 extraction: the offline tests check the calls we make, not what mem0 stores
 - The Docker files and CI workflow
