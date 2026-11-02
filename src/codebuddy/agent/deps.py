@@ -85,7 +85,7 @@ class LLMClassifier:
                 return Classification.model_validate(result)
             except Exception as exc:
                 gen.update(outcome="error", error=type(exc).__name__)
-                log.warning("classifier failed, using heuristic", exc_info=True)
+                log.warning("classifier failed (%s), using heuristic", type(exc).__name__)
                 return heuristic_classification(message, code, progress)
 
 

@@ -51,8 +51,12 @@ async def build_memory(settings: Settings) -> Mem0LearnerMemory | None:
     memory = Mem0LearnerMemory(settings)
     try:
         await memory.warm()  # open the stores now, not during a learner's first turn
-    except Exception:
-        log.exception("Learner memory failed to start; continuing without it")
+    except Exception as exc:  # startup: the message names stores and paths, never learner text
+        log.error(
+            "Learner memory failed to start (%s: %s); continuing without it",
+            type(exc).__name__,
+            exc,
+        )
         return None
     return memory
 

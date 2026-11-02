@@ -24,7 +24,9 @@ can reach twice the limit.
 - Logs (`logs/`, see [observability.md](observability.md)) hold metadata only: a hash of the
   session ID (first 8 hex characters of its SHA-256), never the raw session ID, message, code,
   reply, prompt, learner ID or token (the leak judge's reason text is never logged). The access
-  log shows `/v1/session/<id>` instead of the path. Log files are deleted after
+  log shows `/v1/session/<id>` instead of the path. Failures during a turn log the exception type,
+  not its message or traceback, and other libraries' warnings are written without their text
+  (only uvicorn and Langfuse keep it). Log files are deleted after
   `CODEBUDDY_LOG_RETENTION_DAYS` (5) days. The leak judge sends the learner's code and the reply to
   OpenAI when sampling is on.
 - Langfuse tracing (off unless `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set and the

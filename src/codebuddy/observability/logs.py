@@ -3,15 +3,17 @@
 One set of files per process start, in a folder per day (local time):
 
     logs/YYYY-MM-DD/<app>_HH-MM-SS.log          flow log
-    logs/YYYY-MM-DD/<app>_HH-MM-SS.errors.log   WARNING and up, tracebacks without variables
+    logs/YYYY-MM-DD/<app>_HH-MM-SS.errors.log   WARNING and up; startup failure tracebacks
     logs/YYYY-MM-DD/<app>_HH-MM-SS.jsonl        optional (CODEBUDDY_LOG_JSON=true)
 
 plus stderr. File sinks write from a background thread (enqueue=True), so logging never waits
-on the disk during a turn. Files older than CODEBUDDY_LOG_RETENTION_DAYS are deleted at start.
+on the disk during a turn. Files older than CODEBUDDY_LOG_RETENTION_DAYS are deleted at start,
+and files rotated by a long-running process after the same number of days.
 
 The existing stdlib loggers (codebuddy.*) and uvicorn's are forwarded into loguru by an
 InterceptHandler. Third-party libraries stay at WARNING, so their INFO lines (which can hold
-request details) do not reach the files. Each entrypoint calls setup_logging first; create_app
+request details) do not reach the files, and a library's WARNING keeps only its logger name,
+level and exception type (see safe_message). Each entrypoint calls setup_logging first; create_app
 with injected deps (tests) does not, so tests do not write logs/.
 """
 
@@ -25,7 +27,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.parse import urlparse
@@ -42,6 +44,9 @@ LINE = (
 SAFETY_ROTATION = "50 MB"  # only for a runaway process; normally one file per run
 PRUNED_SUFFIXES = (".log", ".jsonl", ".zip")
 UVICORN = ("uvicorn", "uvicorn.error", "uvicorn.access")
+# Third-party loggers whose message text may reach the logs (prefix match on the logger name).
+# asyncio is left out: "Task exception was never retrieved" embeds the exception's repr.
+SAFE_EXTERNAL = UVICORN + ("langfuse",)
 _SESSION_PATH = re.compile(r"/v1/session/[^\s?\"]+")
 _pruned: list[int] = []  # [files removed, retention days] from the last setup_logging
 
@@ -67,6 +72,26 @@ def _patch(record) -> None:
     extra["mod"] = (record["name"] or "-").removeprefix("codebuddy.")
 
 
+def _named(name: str, prefixes: tuple[str, ...]) -> bool:
+    return any(name == p or name.startswith(p + ".") for p in prefixes)
+
+
+def safe_message(record: logging.LogRecord) -> str:
+    """The text a stdlib record may put in the logs. Our own loggers (codebuddy.*) and a short
+    allowlist keep their message; any other library's message is withheld, because its text
+    (and its exception text) can echo request data. A traceback is never forwarded: only the
+    exception type name, so no exception message reaches a sink this way."""
+    if _named(record.name, ("codebuddy",) + SAFE_EXTERNAL):
+        message = record.getMessage()
+        if record.name == "uvicorn.access":
+            message = redact_path(message)
+    else:
+        message = f"ext:{record.name} {record.levelname} (message withheld)"
+    if record.exc_info and record.exc_info[0] is not None:
+        message += f" exc={record.exc_info[0].__name__}"
+    return message
+
+
 class InterceptHandler(logging.Handler):
     """Forwards stdlib log records to loguru (the recipe from the loguru README)."""
 
@@ -83,10 +108,7 @@ class InterceptHandler(logging.Handler):
                 break
             frame = frame.f_back
             depth += 1
-        message = record.getMessage()
-        if record.name == "uvicorn.access":
-            message = redact_path(message)
-        logger.opt(depth=depth, exception=record.exc_info).log(level, message)
+        logger.opt(depth=depth).log(level, safe_message(record))
 
 
 def prune_logs(log_dir: str | Path, days: int, now: float | None = None) -> int:
@@ -136,7 +158,12 @@ def setup_logging(settings: Settings, app: str = "api") -> Path | None:
         try:
             removed = prune_logs(settings.log_dir, settings.log_retention_days)
             folder.mkdir(parents=True, exist_ok=True)
-            files = {"rotation": SAFETY_ROTATION, "encoding": "utf-8", **safe}
+            files = {
+                "rotation": SAFETY_ROTATION,
+                "retention": timedelta(days=settings.log_retention_days),  # rotated files
+                "encoding": "utf-8",
+                **safe,
+            }
             flow = folder / f"{stem}.log"
             logger.add(flow, level=level, format=flow_format, **files)
             logger.add(
@@ -235,8 +262,16 @@ def failure_hint(exc: BaseException) -> str:
     return "see the .errors.log file next to this log for the traceback"
 
 
-def log_failure(what: str, exc: BaseException, started: float | None = None) -> None:
+def log_failure(
+    what: str, exc: BaseException, started: float | None = None, *, plain: str | None = None
+) -> None:
+    """A program (startup, ingest, eval) failed. The traceback goes to stderr and .errors.log;
+    these failures happen outside a learner's turn. `plain`: a message we wrote ourselves (a bad
+    dataset line, say), logged instead of a traceback."""
     elapsed = "" if started is None else f" after {time.perf_counter() - started:.1f} s"
+    if plain is not None:
+        logger.error("{} failed{}: {}", what, elapsed, plain)
+        return
     logger.opt(exception=exc).error(
         "{} failed{}: {}. Hint: {}", what, elapsed, type(exc).__name__, failure_hint(exc)
     )

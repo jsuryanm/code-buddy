@@ -19,7 +19,7 @@ program wrote it and when it started:
 logs/
   2026-11-02/
     api_09-14-03.log            flow log of the API started at 09:14:03 (INFO and up)
-    api_09-14-03.errors.log     WARNING and up, with tracebacks
+    api_09-14-03.errors.log     WARNING and up (a traceback only for a program that failed)
     api_09-14-03.jsonl          only with CODEBUDDY_LOG_JSON=true
     ui_09-14-10.log
     mcp_09-14-04.log            the MCP tool server the API starts
@@ -121,7 +121,9 @@ reports `tracing=on|off`),
 progress with counts and durations, a finish line with the outcome and elapsed time, and on a
 failure the exception type with a hint such as `OPENAI_API_KEY is not set: add it to .env` or
 `the Qdrant folder is locked: stop the API (or the other process) first`. The traceback goes to
-the `.errors.log` file.
+the `.errors.log` file. These are the only tracebacks in the logs: they come from a program that
+could not start or finish (API startup, ingest, eval), outside any learner's turn. A bad RAGAS
+dataset line is reported as a plain message without a traceback.
 
 ## Settings
 
@@ -131,7 +133,7 @@ the `.errors.log` file.
 | `CODEBUDDY_LOG_DIR` | `logs` | Root folder for the day folders |
 | `CODEBUDDY_LOG_TO_FILE` | `true` | `false`: stderr only (the test suite sets this) |
 | `CODEBUDDY_LOG_JSON` | `false` | Also write a `.jsonl` file (one JSON object per record, loguru's `serialize`) for log shippers |
-| `CODEBUDDY_LOG_RETENTION_DAYS` | `5` | Files older than this are deleted at start (minimum 1) |
+| `CODEBUDDY_LOG_RETENTION_DAYS` | `5` | Files older than this are deleted at start (minimum 1); a long-running process also deletes its own rotated 50 MB files after this many days |
 
 ## How it is wired
 
@@ -141,7 +143,11 @@ the `.errors.log` file.
 - Existing modules keep their stdlib loggers (`codebuddy.api`, `.agent`, `.memory`, `.tools`,
   `.stt`, `.judge`). An `InterceptHandler` on the root logger forwards their records, and
   uvicorn's, into loguru. Third-party libraries stay at WARNING, so their INFO lines (HTTP request
-  lines with URLs, for example) do not reach the files.
+  lines with URLs, for example) do not reach the files. A third-party WARNING or ERROR keeps its
+  message only for uvicorn and Langfuse; any other library (mem0, httpx, openai, qdrant_client,
+  langchain, asyncio, ...) is written as `ext:<logger> <LEVEL> (message withheld) exc=<type>`,
+  because its text can echo request data. The handler never forwards a traceback, only the
+  exception type name (`safe_message` in `observability/logs.py`).
 - The node lines come from one wrapper around every node in `build_graph` (`agent/graph.py`), so a
   new node is logged without extra code. Its summary comes from a per-node whitelist in
   `observability/summaries.py`.
@@ -157,7 +163,13 @@ names, pattern ids, policy reasons and source titles. They never hold the learne
 the reply, a prompt, a learner id or token, or the raw session id.
 
 - Node summaries come from a whitelist; unknown keys are dropped, never stringified.
-- Session ids are hashed (the same hash as the leak judge's log line). The uvicorn access log has
+- When a classifier, retrieval, tool, transcription or model call fails during a turn, the line
+  names the exception type only (`retrieval failed (TimeoutError)`), never its message or
+  traceback. Learner memory failing at startup also logs its message, which names stores and
+  paths, not learner text.
+- Session ids are hashed (the same hash as the leak judge's log line). `hash_session` is an
+  unsalted 8-hex digest of a random session id: it groups one session's lines and is not a
+  secret. The uvicorn access log has
   `/v1/session/<id>` instead of the real path.
 - The leak guard's log line names the kind of stop (`code statement`) and no longer quotes the
   model's text.
@@ -165,10 +177,12 @@ the reply, a prompt, a learner id or token, or the raw session id.
   replies, the learner token and the session id, with every sink on at DEBUG, and checks that none
   of them appear (`tests/integration/test_logging_flow.py`).
 
-What remains outside that guarantee: exception messages in `.errors.log` tracebacks come from
-libraries (OpenAI, Qdrant, mem0) and could in principle echo request details; the leak judge's
-`reason` text is never logged (only the flag, hashed session and level); and
-the access log records client IP addresses.
+What remains outside that guarantee: the traceback of a program that failed to start or finish
+(see above) can quote a library's exception message, such as a host name; uvicorn and Langfuse
+warnings keep their text; the leak judge's `reason` text is never logged (only the flag, hashed
+session and level); and the access log records client IP addresses. A sentinel test raises from a
+fake mem0 logger, the classifier, retrieval and a tool and checks that the exception text reaches
+no sink.
 
 ## Cost on the hot path
 

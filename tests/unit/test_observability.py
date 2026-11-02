@@ -14,6 +14,7 @@ from codebuddy.observability.logs import (
     failure_hint,
     prune_logs,
     redact_path,
+    safe_message,
     setup_logging,
 )
 from codebuddy.observability.summaries import format_summary, hash_session, safe_summary
@@ -183,3 +184,28 @@ async def test_tool_calls_log_name_route_and_duration_but_not_the_code():
     line = next(x for x in lines if x.startswith("tool trace_python"))
     assert "via=inprocess" in line and "ok=True" in line and " ms " in line
     assert not any("SECRET_CODE" in x for x in lines)
+
+
+def test_file_sinks_prune_rotated_files_after_the_retention_days(
+    tmp_path, stdlib_logging, monkeypatch
+):
+    added = []
+    real_add = logger.add
+    monkeypatch.setattr(logger, "add", lambda sink, **kw: added.append(kw) or real_add(sink, **kw))
+    setup_logging(_settings(tmp_path, log_retention_days=3))
+    files = [kw for kw in added if "rotation" in kw]
+    assert files and all(kw["retention"].days == 3 for kw in files)
+
+
+def test_only_allowlisted_libraries_keep_their_message():
+    def record(name, msg="hello %s", exc=None):
+        return logging.LogRecord(name, logging.WARNING, __file__, 1, msg, ("x",), exc)
+
+    assert safe_message(record("uvicorn.error")) == "hello x"
+    assert safe_message(record("langfuse._client")) == "hello x"
+    assert safe_message(record("codebuddy.agent")) == "hello x"
+    assert safe_message(record("httpx")) == "ext:httpx WARNING (message withheld)"
+    assert safe_message(record("asyncio")) == "ext:asyncio WARNING (message withheld)"
+    assert safe_message(record("codebuddyx")).startswith("ext:codebuddyx")
+    exc = (KeyError, KeyError("secret"), None)
+    assert safe_message(record("openai._base_client", exc=exc)).endswith("exc=KeyError")

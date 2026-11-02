@@ -255,8 +255,8 @@ class TutorNodes:
         emit_step(writer, "retrieve", "running")
         try:
             result = await self.d.retriever.retrieve(self._query(state["message"], state))
-        except Exception:
-            log.warning("retrieval failed", exc_info=True)
+        except Exception as exc:
+            log.warning("retrieval failed (%s)", type(exc).__name__)
             result = RetrievalResult([], grounded=False)
         n = len(result.chunks)
         title = short_title(result.chunks[0].source) if n else ""
@@ -314,8 +314,8 @@ class TutorNodes:
             log.debug("refined retrieval timed out, keeping the first result")
             await self.d.metrics.incr("refine_timeouts")
             return {}
-        except Exception:
-            log.warning("refined retrieval failed", exc_info=True)
+        except Exception as exc:
+            log.warning("refined retrieval failed (%s)", type(exc).__name__)
             return {}
         if not second.chunks:
             return {}
@@ -444,7 +444,7 @@ class TutorNodes:
                     )
                 except Exception as exc:
                     span.update(ok=False, error=type(exc).__name__)
-                    log.warning("tool %s failed", name, exc_info=True)
+                    log.warning("tool %s failed (%s)", name, type(exc).__name__)
                     continue
                 span.update(ok=True)
             ran = True
@@ -603,7 +603,6 @@ class TutorNodes:
                     log.warning(
                         "model call failed (mode=%s, tier=%s): %s", mode, tier, type(error).__name__
                     )
-                    log.debug("model call failure detail", exc_info=error)
                 else:
                     log.warning(
                         "empty model reply (mode=%s, tier=%s): finish_reason=%s usage=%s",

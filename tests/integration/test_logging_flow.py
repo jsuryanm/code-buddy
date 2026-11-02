@@ -6,6 +6,7 @@ import pytest
 from loguru import logger
 from pydantic import SecretStr
 
+from codebuddy.agent.deps import LLMClassifier
 from codebuddy.api import app as app_module
 from codebuddy.api import wiring
 from codebuddy.api.app import create_app
@@ -144,3 +145,48 @@ async def test_production_lifespan_sets_up_logging_but_injected_deps_do_not(
 class _Stack:
     async def aclose(self) -> None:
         return None
+
+
+LEAK = "SENTINELEXC learner text in an exception"
+
+
+async def test_third_party_messages_and_exception_text_are_withheld(captured):
+    _, everything = captured
+    try:
+        raise RuntimeError(LEAK)
+    except RuntimeError:
+        logging.getLogger("mem0.memory.main").warning("add failed for %s", LEAK, exc_info=True)
+    logging.getLogger("codebuddy.api").warning(
+        "own line", exc_info=(ValueError, ValueError(LEAK), None)
+    )
+    text = everything()
+    assert "ext:mem0.memory.main WARNING (message withheld) exc=RuntimeError" in text
+    assert "own line exc=ValueError" in text
+    assert LEAK not in text
+
+
+class _Raising:
+    """Classifier chain, retriever and tool runner at once; each raises with the sentinel."""
+
+    def with_structured_output(self, schema):
+        return self
+
+    async def _raise(self, *a, **k):
+        raise RuntimeError(LEAK)
+
+    ainvoke = retrieve = call = _raise
+
+
+async def test_failing_classifier_retriever_and_tool_log_only_the_type(make_harness, captured):
+    _, everything = captured
+    h = make_harness(standard=ScriptedChat(["Q?", "Q2?"]), tools=_Raising())
+    h.deps.classifier = LLMClassifier(_Raising())
+    h.deps.retriever = _Raising()
+    paused = await h.turn("my loop crashes", code=BUGGY)
+    assert paused["interrupt"]["tool"] == "trace_python"
+    await h.resume(paused["thread_id"], approve=True)
+    text = everything()
+    assert "classifier failed (RuntimeError)" in text
+    assert "retrieval failed (RuntimeError)" in text
+    assert "tool trace_python failed (RuntimeError)" in text
+    assert LEAK not in text

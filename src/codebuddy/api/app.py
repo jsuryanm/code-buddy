@@ -306,8 +306,8 @@ def create_app(
                     yield sse("done", done)
                     if not pending and st.get("reply"):
                         _audit(session_id, code, st["reply"], level)
-        except Exception:
-            log.exception("turn failed")
+        except Exception as exc:
+            log.error("turn failed (%s)", type(exc).__name__)
             yield sse("error", {"message": "Something went wrong. Please try again."})
 
     def _audit(session_id: str, code: str | None, reply: str, level: int | None) -> None:
@@ -451,7 +451,7 @@ def create_app(
             transcript = await stt_service.transcribe(data, audio.filename or "speech.wav")
         except TranscriptionError as exc:
             await current().metrics.incr("stt_failures")
-            log.warning("transcription failed: %s", exc)
+            log.warning("transcription failed (%s)", exc)
             raise HTTPException(502, "Transcription failed; please type your question") from exc
         return {"text": transcript.text, "provider": transcript.provider}
 

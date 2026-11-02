@@ -103,6 +103,8 @@ async def start_tool_runner(use_mcp: bool) -> ToolRunner:
         try:
             await runner.start()
             return runner
-        except Exception:
-            log.warning("MCP server failed to start; calling tools in-process", exc_info=True)
+        except Exception as exc:
+            log.warning(
+                "MCP server failed to start (%s); calling tools in-process", type(exc).__name__
+            )
     return LocalToolRunner()

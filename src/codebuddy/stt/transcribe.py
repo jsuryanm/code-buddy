@@ -84,8 +84,8 @@ class SpeechToText:
             try:
                 text = await t.transcribe(audio, filename)
             except Exception as exc:
-                log.warning("transcriber %s failed: %s", t.name, exc)
-                errors.append(f"{t.name}: {exc}")
+                log.warning("transcriber %s failed (%s)", t.name, type(exc).__name__)
+                errors.append(f"{t.name}: {type(exc).__name__}")  # provider text stays out
                 continue
             return Transcript(normalize_transcript(text), t.name)
         raise TranscriptionError("; ".join(errors))
