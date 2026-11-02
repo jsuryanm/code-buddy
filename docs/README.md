@@ -4,6 +4,24 @@ CodeBuddy is a RAG-based programming tutor. It guides beginners through the PCDI
 (Problem definition, Concrete cases, Design of algorithm, Implementation, Testing) with
 Socratic hints instead of handing out answers, and always lets them reach the full answer.
 
+## Beginner guide
+
+New to AI apps, RAG, servers or Python projects? Start with the guide in [guide/](guide/README.md).
+It explains everything in plain words, in reading order:
+
+| Page | Read it to |
+|---|---|
+| [guide/README.md](guide/README.md) | Start here: what CodeBuddy is, the 5-minute picture, where to go next |
+| [guide/01-how-the-tutor-works.md](guide/01-how-the-tutor-works.md) | Follow one learner turn step by step: hints, Show answer, quiz, memory, caches, models |
+| [guide/02-run-it-on-your-computer.md](guide/02-run-it-on-your-computer.md) | Install, try the keyless demo, set up `.env`, ingest documents, tour the UI |
+| [guide/03-run-with-docker.md](guide/03-run-with-docker.md) | Run it with Docker |
+| [aws-free-tier.md](aws-free-tier.md) | Deploy it on the AWS free tier |
+| [guide/04-logs-tracing-and-evaluation.md](guide/04-logs-tracing-and-evaluation.md) | Read logs, trace turns in Langfuse, score answers with RAGAS |
+| [guide/05-troubleshooting.md](guide/05-troubleshooting.md) | Match a symptom to its cause and fix |
+| [guide/06-glossary.md](guide/06-glossary.md) | Look up any technical word |
+
+The rest of this folder is the reference manual:
+
 | Document | Read it to |
 |---|---|
 | [setup.md](setup.md) | Install, configure, ingest documents, and run the API and UI |

@@ -6,6 +6,8 @@ Implementation, Testing) with Socratic hints grounded in course material. The an
 locked away: the learner can always get it, and the tutor offers it when hints are not helping.
 It runs as a FastAPI service with a Streamlit front end.
 
+New here? Start with the beginner guide, [docs/guide/README.md](docs/guide/README.md).
+
 ## The problem
 
 Beginners rarely fail on syntax. They fail on the process: they start typing before they
@@ -233,7 +235,7 @@ been run against the live Langfuse cloud. The RAGAS runner is tested with fakes 
 - [docs/memory.md](docs/memory.md), [docs/security.md](docs/security.md)
 - [docs/rag-and-ingestion.md](docs/rag-and-ingestion.md), [docs/deployment.md](docs/deployment.md)
 - [deploy/aws/](deploy/aws/README.md): AWS free-tier deployment, authored but never deployed
-  (beginner guide `docs/aws-free-tier.md` coming)
+  (beginner guide: [docs/aws-free-tier.md](docs/aws-free-tier.md))
 - [PROJECT_SPEC.md](PROJECT_SPEC.md): the target design
 
 ## Licences and permissions
